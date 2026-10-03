@@ -284,6 +284,28 @@ func TestAPIUploadRemovesDirWhenRecordSaveFails(t *testing.T) {
 	}
 }
 
+// The record is saved before the dir goes public, so a failed publish must drop the record again
+// instead of listing a share that serves nothing.
+func TestAPIUploadDropsRecordWhenPublishFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission checks don't apply to root")
+	}
+	a := newTestAPI(t, 1024)
+	sharesDir := filepath.Join(a.DataDir, "shares")
+	if err := os.Chmod(sharesDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+
+	rec := do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x")))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("upload: %d %s, want 500", rec.Code, rec.Body)
+	}
+	if got := a.Store.List(); len(got) != 0 {
+		t.Fatalf("records after failed publish = %+v, want none", got)
+	}
+}
+
 // Server-side filesystem failures are not the client's fault (500), and must not leak server paths.
 func TestAPIUploadFilesystemErrorIs500WithoutPaths(t *testing.T) {
 	if os.Geteuid() == 0 {

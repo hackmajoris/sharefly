@@ -61,13 +61,13 @@ func addDir(tw *tar.Writer, root string) (skipped []string, err error) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
+		if d.Name() == ".git" {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if d.Name() == ".DS_Store" {
+		if d.IsDir() || d.Name() == ".DS_Store" {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)

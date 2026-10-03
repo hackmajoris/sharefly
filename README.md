@@ -25,7 +25,7 @@ go-share serve x.html ──tailnet──▶ go-share server
 - The management API listens only on the tailnet address. The file server binds to loopback and is reached only through cloudflared.
 - Each share gets a random 10-char ID. The unguessable link is the only access control on the public side.
 - Expired shares are swept at startup and every 5 minutes, so an expired share can stay reachable for up to 5 minutes.
-- At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. Don't put files there by hand.
+- At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. If that cleanup fails, the server exits with an error instead of serving (launchd retries). Don't put files there by hand.
 - go-share never talks to cloudflared or the Cloudflare API. The tunnel is configured in the Cloudflare dashboard.
 
 ## Build / install
@@ -109,7 +109,7 @@ The archive may hold only regular files and directories with relative paths, at 
 
 - Use relative links in shared HTML. Shares live under `/<id>/`, so absolute paths like `/style.css` break.
 - Empty folders are not uploaded.
-- Inside a folder, symlinks (including symlinked subfolders, skipped whole) and other non-regular files are skipped with a warning. A symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed. `.git/` and `.DS_Store` are skipped.
+- Inside a folder, symlinks (including symlinked subfolders, skipped whole) and other non-regular files are skipped with a warning. A symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed. `.git` (directory or worktree/submodule file) and `.DS_Store` are skipped.
 - The tailnet is the API's auth. Anyone on your tailnet can create and delete shares.
 - Upload limit is 100MB (compressed and uncompressed).
 - Default TTL is 7 days. Use `--ttl never` to keep a share until `rm`.

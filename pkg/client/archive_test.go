@@ -75,6 +75,7 @@ func TestArchiveFolderExcludesRepoAndJunk(t *testing.T) {
 		"img/.DS_Store":     "junk",
 		".git/HEAD":         "ref: refs/heads/main",
 		".git/objects/ab/x": "secret history",
+		"sub/.git":          "gitdir: /Users/me/private/repo/.git/modules/sub",
 	})
 	if err := os.Symlink("/etc/passwd", filepath.Join(root, "leak")); err != nil {
 		t.Fatal(err)
@@ -94,7 +95,7 @@ func TestArchiveFolderExcludesRepoAndJunk(t *testing.T) {
 	}
 	slices.Sort(names)
 	if want := []string{"css/site.css", "index.html"}; !slices.Equal(names, want) {
-		t.Fatalf("entries = %v, want %v (.git, .DS_Store and symlinks must never be published)", names, want)
+		t.Fatalf("entries = %v, want %v (.git dirs, .git files (worktree/submodule gitdir paths), .DS_Store and symlinks must never be published)", names, want)
 	}
 }
 

@@ -75,11 +75,6 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	dst := filepath.Join(a.SharesDir(), id)
-	if err := os.Rename(tmp, dst); err != nil {
-		internalError(w, err)
-		return
-	}
 	now := time.Now().UTC()
 	sh := share.Share{
 		ID:        id,
@@ -93,7 +88,13 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		sh.ExpiresAt = &exp
 	}
 	if err := a.Store.Add(sh); err != nil {
-		os.RemoveAll(dst)
+		internalError(w, err)
+		return
+	}
+	if err := os.Rename(tmp, filepath.Join(a.SharesDir(), id)); err != nil {
+		if derr := a.Store.Delete(id); derr != nil {
+			log.Printf("drop record %s: %v", id, derr)
+		}
 		internalError(w, err)
 		return
 	}

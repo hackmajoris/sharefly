@@ -185,6 +185,40 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	}
 }
 
+// Reconcile is the only pass that removes orphaned shares; if it can't, the server must refuse to
+// serve (non-zero exit, launchd retries, the log shows why) rather than keep an orphan public.
+func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission checks don't apply to root")
+	}
+	dir := seedDataDir(t)
+	sharesDir := filepath.Join(dir, "shares")
+	if err := os.Chmod(sharesDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+	publicAddr := freeAddr(t)
+	done := make(chan error, 1)
+	go func() {
+		done <- runServer([]string{"--api-addr", freeAddr(t), "--public-addr", publicAddr,
+			"--public-url", "https://s", "--data-dir", dir})
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("runServer must return an error when reconcile fails")
+		}
+	case <-time.After(5 * time.Second):
+		syscall.Kill(os.Getpid(), syscall.SIGINT)
+		<-done
+		t.Fatal("runServer kept serving with an orphan it could not remove")
+	}
+	if resp, err := http.Get("http://" + publicAddr + "/orphan/"); err == nil {
+		resp.Body.Close()
+		t.Fatalf("public listener still reachable after failed reconcile: %d", resp.StatusCode)
+	}
+}
+
 func TestRunServerBindFailure(t *testing.T) {
 	dir := t.TempDir()
 	err := runServer([]string{"--api-addr", "256.0.0.1:1", "--public-url", "https://s", "--data-dir", dir})

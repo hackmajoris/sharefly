@@ -17,7 +17,8 @@ Invariants (keep when changing code):
 - The public file system hides directories without a regular-file `index.html`: no listing anywhere.
 - Extraction writes only regular files/dirs, requests modes 0644/0755 (ignores tar header modes), and caps uncompressed bytes (100MB, while reading) and entry count.
 - The client validates TTL and path (folder has `index.html`) before opening any connection.
-- The server binds both listeners before Reconcile/Sweep, so a second instance never touches live data.
+- The server binds both listeners before Reconcile/Sweep, so a second instance never touches live data. A Reconcile error aborts startup (orphans would otherwise stay public).
+- Upload saves the record before renaming the dir into `shares/`, so nothing is public without a record.
 
 Contracts:
 - `server.API` owns the dir names (`SharesDir()`, `TmpDir()`) and assumes they exist; only `runServer` creates them.

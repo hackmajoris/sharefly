@@ -88,7 +88,9 @@ func runServer(args []string) error {
 	}
 
 	if err := share.Reconcile(store, sharesDir, tmpDir); err != nil {
-		log.Printf("reconcile: %v", err)
+		apiLn.Close()
+		publicLn.Close()
+		return fmt.Errorf("reconcile: %w", err)
 	}
 	if err := share.Sweep(store, sharesDir, time.Now()); err != nil {
 		log.Printf("sweep: %v", err)
