@@ -74,15 +74,11 @@ func (s *Store) Delete(id string) error {
 	return s.commit(slices.Delete(slices.Clone(s.shares), i, i+1))
 }
 
-func (s *Store) Renew(id, ttl string, now time.Time) (Share, error) {
-	d, never, err := ParseTTL(ttl)
-	if err != nil {
-		return Share{}, err
-	}
+func (s *Store) Renew(id string, d time.Duration, never bool, now time.Time) (Share, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	i := s.index(id)
-	if i < 0 {
+	if i < 0 || s.shares[i].ExpiresAt != nil && !s.shares[i].ExpiresAt.After(now) {
 		return Share{}, ErrNotFound
 	}
 	next := slices.Clone(s.shares)
@@ -102,9 +98,6 @@ func (s *Store) index(id string) int {
 }
 
 func (s *Store) commit(next []Share) error {
-	if next == nil {
-		next = []Share{}
-	}
 	data, err := json.MarshalIndent(next, "", "  ")
 	if err != nil {
 		return err
@@ -115,6 +108,10 @@ func (s *Store) commit(next []Share) error {
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		return err
 	}

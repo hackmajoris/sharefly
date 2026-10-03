@@ -55,10 +55,20 @@ func TestPrintShares(t *testing.T) {
 		{Share: share.Share{ID: "aaaaaaaaaa", Name: "a.html", ExpiresAt: &exp}, URL: "https://s/aaaaaaaaaa/a.html"},
 		{Share: share.Share{ID: "bbbbbbbbbb", Name: "site"}, URL: "https://s/bbbbbbbbbb/"},
 	})
-	out := buf.String()
-	for _, want := range []string{"ID", "aaaaaaaaaa", exp.Local().Format(time.DateTime), "https://s/aaaaaaaaaa/a.html", "never"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q:\n%s", want, out)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want header + 2:\n%s", len(lines), buf.String())
+	}
+	rows := [][]string{
+		{"ID", "NAME", "EXPIRES", "URL"},
+		{"aaaaaaaaaa", "a.html", exp.Local().Format(time.DateTime), "https://s/aaaaaaaaaa/a.html"},
+		{"bbbbbbbbbb", "site", "never", "https://s/bbbbbbbbbb/"},
+	}
+	for i, want := range rows {
+		for _, field := range want {
+			if !strings.Contains(lines[i], field) {
+				t.Errorf("line %d %q missing %q", i, lines[i], field)
+			}
 		}
 	}
 }

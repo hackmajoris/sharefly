@@ -21,14 +21,22 @@ func (n noListingFS) Open(name string) (http.File, error) {
 		return nil, err
 	}
 	if info.IsDir() {
-		idx, err := n.fs.Open(path.Join(name, "index.html"))
-		if err != nil {
+		if !isRegularFile(n.fs, path.Join(name, "index.html")) {
 			f.Close()
 			return nil, fs.ErrNotExist
 		}
-		idx.Close()
 	}
 	return f, nil
+}
+
+func isRegularFile(fsys http.FileSystem, name string) bool {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	return err == nil && info.Mode().IsRegular()
 }
 
 type noStoreWriter struct {

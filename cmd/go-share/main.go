@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 )
@@ -16,28 +18,36 @@ commands:
 `
 
 func main() {
-	if len(os.Args) < 2 {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	if len(args) < 1 {
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		return 2
 	}
 	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "server":
-		err = runServer(os.Args[2:])
+		err = runServer(args[1:])
 	case "serve":
-		err = runServe(os.Args[2:])
+		err = runServe(args[1:])
 	case "ls":
-		err = runList(os.Args[2:])
+		err = runList(args[1:])
 	case "rm":
-		err = runRm(os.Args[2:])
+		err = runRm(args[1:])
 	case "renew":
-		err = runRenew(os.Args[2:])
+		err = runRenew(args[1:])
 	default:
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		return 2
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "go-share:", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

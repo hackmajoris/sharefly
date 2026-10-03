@@ -78,3 +78,34 @@ func TestFilesSetsNoStoreOnEveryResponse(t *testing.T) {
 		}
 	}
 }
+
+// A directory named index.html is not a page; treating it as one fell back to a listing.
+func TestFilesNoListingWhenIndexHTMLIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "abc1234567", "index.html", "x.txt"), "x")
+	writeFile(t, filepath.Join(dir, "abc1234567", "sub", "index.html", "a.txt"), "a")
+	writeFile(t, filepath.Join(dir, "abc1234567", "secret.txt"), "s")
+	h := FilesHandler(dir)
+	for _, p := range []string{"/abc1234567/", "/abc1234567/sub/"} {
+		rec := get(t, h, p)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", p, rec.Code)
+		}
+		if body := rec.Body.String(); strings.Contains(body, "secret.txt") || strings.Contains(body, "index.html") {
+			t.Errorf("%s: body leaks listing: %q", p, body)
+		}
+	}
+}
+
+// shares.json sits next to shares/ and lists every share ID; it must never be reachable.
+func TestFilesRejectsTraversal(t *testing.T) {
+	data := t.TempDir()
+	writeFile(t, filepath.Join(data, "shares.json"), `[{"id":"leakedid00"}]`)
+	writeFile(t, filepath.Join(data, "shares", "site123456", "index.html"), "i")
+	h := FilesHandler(filepath.Join(data, "shares"))
+	for _, p := range []string{"/../shares.json", "/%2e%2e/shares.json", "/site123456/../../shares.json", "/..%2fshares.json"} {
+		if body := get(t, h, p).Body.String(); strings.Contains(body, "leakedid00") {
+			t.Errorf("%s: served shares.json", p)
+		}
+	}
+}

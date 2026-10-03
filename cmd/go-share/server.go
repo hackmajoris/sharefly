@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	maxUploadBytes = 100 << 20
-	sweepInterval  = 5 * time.Minute
+	maxUploadBytes    = 100 << 20
+	sweepInterval     = 5 * time.Minute
+	readHeaderTimeout = 10 * time.Second
 )
 
 type serverConfig struct {
@@ -32,11 +33,10 @@ type serverConfig struct {
 
 func parseServerFlags(args []string) (serverConfig, error) {
 	var cfg serverConfig
-	home, _ := os.UserHomeDir()
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	fs.StringVar(&cfg.apiAddr, "api-addr", "", "management API listen address (tailnet IP:port, required)")
 	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
-	fs.StringVar(&cfg.dataDir, "data-dir", filepath.Join(home, "go-share"), "data directory")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default ~/go-share)")
 	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL, e.g. https://share.example.com (required)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -49,6 +49,13 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	}
 	if cfg.apiAddr == "" {
 		return cfg, errors.New("--api-addr is required")
+	}
+	if cfg.dataDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return cfg, fmt.Errorf("no --data-dir and no home directory: %w", err)
+		}
+		cfg.dataDir = filepath.Join(home, "go-share")
 	}
 	return cfg, nil
 }
@@ -69,13 +76,6 @@ func runServer(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := share.Reconcile(store, sharesDir, tmpDir); err != nil {
-		log.Printf("reconcile: %v", err)
-	}
-	if err := share.Sweep(store, sharesDir, time.Now()); err != nil {
-		log.Printf("sweep: %v", err)
-	}
-
 	apiLn, err := net.Listen("tcp", cfg.apiAddr)
 	if err != nil {
 		return err
@@ -86,10 +86,17 @@ func runServer(args []string) error {
 		return err
 	}
 
+	if err := share.Reconcile(store, sharesDir, tmpDir); err != nil {
+		log.Printf("reconcile: %v", err)
+	}
+	if err := share.Sweep(store, sharesDir, time.Now()); err != nil {
+		log.Printf("sweep: %v", err)
+	}
+
 	api := &server.API{Store: store, DataDir: cfg.dataDir, PublicURL: cfg.publicURL, MaxBytes: maxUploadBytes}
 	servers := []*http.Server{
-		{Handler: api.Handler()},
-		{Handler: server.FilesHandler(sharesDir)},
+		{Handler: api.Handler(), ReadHeaderTimeout: readHeaderTimeout},
+		{Handler: server.FilesHandler(sharesDir), ReadHeaderTimeout: readHeaderTimeout},
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

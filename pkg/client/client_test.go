@@ -1,12 +1,15 @@
 package client
 
 import (
+	"crypto/rand"
+	"errors"
+	"io/fs"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -89,32 +92,117 @@ func TestClientUploadSingleFileURLPointsAtFile(t *testing.T) {
 	}
 }
 
-func TestClientUploadNoIndexFailsBeforeNetwork(t *testing.T) {
+// connCounter returns a client for a raw listener and a func reporting how many connections it
+// accepted before a probe dialed after the call under test; accepts arrive in order, so the
+// count is exact without sleeping.
+func connCounter(t *testing.T) (*Client, func() int) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ln.Close() })
-	var conns atomic.Int32
+	accepted := make(chan string, 16)
 	go func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			conns.Add(1)
+			accepted <- conn.RemoteAddr().String()
 			conn.Close()
 		}
 	}()
-	c := &Client{BaseURL: "http://" + ln.Addr().String()}
+	count := func() int {
+		probe, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		probe.Close()
+		n := 0
+		for {
+			select {
+			case addr := <-accepted:
+				if addr == probe.LocalAddr().String() {
+					return n
+				}
+				n++
+			case <-time.After(5 * time.Second):
+				t.Fatal("probe connection never accepted")
+			}
+		}
+	}
+	return &Client{BaseURL: "http://" + ln.Addr().String()}, count
+}
+
+func TestClientUploadNoIndexFailsBeforeNetwork(t *testing.T) {
+	c, count := connCounter(t)
 	site := writeTree(t, map[string]string{"a.html": "a", "b.html": "b"})
-	_, err = c.Upload(site, "7d")
+	_, err := c.Upload(site, "7d")
 	if err == nil || !strings.Contains(err.Error(), "index.html") {
 		t.Fatalf("err = %v, want local index.html error rather than a server error", err)
 	}
-	time.Sleep(50 * time.Millisecond)
-	if n := conns.Load(); n != 0 {
+	if n := count(); n != 0 {
 		t.Fatalf("folder without index.html must fail before any network call, server saw %d connection(s)", n)
+	}
+}
+
+// A bad --ttl must fail locally: a server 400 sent before the body is read can surface as a broken pipe.
+func TestClientUploadBadTTLFailsBeforeNetwork(t *testing.T) {
+	c, count := connCounter(t)
+	f := filepath.Join(t.TempDir(), "x.html")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Upload(f, "7w"); err == nil || !strings.Contains(err.Error(), "invalid ttl") {
+		t.Fatalf("err = %v, want invalid ttl error", err)
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("bad ttl must fail before any network call, server saw %d connection(s)", n)
+	}
+}
+
+// `serve .` must record the folder's real name, not ".".
+func TestClientUploadDotUsesFolderName(t *testing.T) {
+	c, _ := newTestServer(t)
+	site := writeTree(t, map[string]string{"index.html": "hi"})
+	t.Chdir(site)
+	up, err := c.Upload(".", "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Name != filepath.Base(site) {
+		t.Fatalf("name = %q, want %q", up.Name, filepath.Base(site))
+	}
+}
+
+// The server cuts an oversized upload short; the user must see the 413, not a connection error.
+func TestClientUploadTooLargeSurfacesServerError(t *testing.T) {
+	c, _ := newTestServer(t)
+	f := filepath.Join(t.TempDir(), "big.bin")
+	b := make([]byte, 4<<20)
+	rand.Read(b)
+	if err := os.WriteFile(f, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Upload(f, "7d"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("err = %v, want server's upload too large message", err)
+	}
+}
+
+// A file that can't be read mid-stream must report the local error, not whatever the server said
+// about the truncated archive.
+func TestClientUploadArchiveErrorWins(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission checks don't apply to root")
+	}
+	c, _ := newTestServer(t)
+	site := writeTree(t, map[string]string{"index.html": "hi", "locked.js": "x"})
+	if err := os.Chmod(filepath.Join(site, "locked.js"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Upload(site, "7d"); err == nil || !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("err = %v, want local permission error", err)
 	}
 }
 
@@ -133,7 +221,8 @@ func TestClientUnreachable(t *testing.T) {
 	}
 	_, upErr := c.Upload(f, "7d")
 	_, listErr := c.List()
-	for _, err := range []error{upErr, listErr, c.Delete("x")} {
+	_, renewErr := c.Renew("x", "7d")
+	for _, err := range []error{upErr, listErr, renewErr, c.Delete("x")} {
 		if err == nil || !strings.Contains(err.Error(), "can't reach") || !strings.Contains(err.Error(), addr) {
 			t.Errorf("err = %v, want actionable can't reach message naming %s", err, addr)
 		}
@@ -148,11 +237,33 @@ func TestClientSurfacesServerError(t *testing.T) {
 	if _, err := c.Renew("nope", "7d"); err == nil || !strings.Contains(err.Error(), share.ErrNotFound.Error()) {
 		t.Fatalf("renew unknown: err = %v", err)
 	}
-	f := filepath.Join(t.TempDir(), "x.html")
-	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
+}
+
+// Errors from a proxy or a broken server have no JSON body; the status must still reach the user.
+func TestClientNonJSONResponses(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		w.Write([]byte("not json"))
+	}))
+	t.Cleanup(ts.Close)
+	c := &Client{BaseURL: ts.URL}
+	if err := c.Delete("x"); err == nil || !strings.Contains(err.Error(), "server returned 502") {
+		t.Fatalf("delete: err = %v, want status fallback", err)
 	}
-	if _, err := c.Upload(f, "7w"); err == nil || strings.Contains(err.Error(), "can't reach") {
-		t.Fatalf("bad ttl must surface the server's 400 message, got %v", err)
+	if _, err := c.List(); err == nil {
+		t.Fatal("list: malformed success body must be an error")
+	}
+}
+
+func TestClientUploadMissingPath(t *testing.T) {
+	c, count := connCounter(t)
+	if _, err := c.Upload(filepath.Join(t.TempDir(), "nope"), "7d"); err == nil {
+		t.Fatal("want error for nonexistent path")
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("missing path must fail before any network call, server saw %d connection(s)", n)
 	}
 }

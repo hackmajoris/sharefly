@@ -58,12 +58,8 @@ func entries(t *testing.T, r io.Reader) map[string]string {
 func TestArchiveSingleFile(t *testing.T) {
 	root := writeTree(t, map[string]string{"report.html": "<h1>r</h1>"})
 	var buf bytes.Buffer
-	name, err := Archive(filepath.Join(root, "report.html"), &buf)
-	if err != nil {
+	if err := Archive(filepath.Join(root, "report.html"), &buf); err != nil {
 		t.Fatal(err)
-	}
-	if name != "report.html" {
-		t.Fatalf("name = %q", name)
 	}
 	got := entries(t, &buf)
 	if len(got) != 1 || got["report.html"] != "<h1>r</h1>" {
@@ -84,12 +80,8 @@ func TestArchiveFolderExcludesRepoAndJunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	name, err := Archive(root, &buf)
-	if err != nil {
+	if err := Archive(root, &buf); err != nil {
 		t.Fatal(err)
-	}
-	if name != filepath.Base(root) {
-		t.Fatalf("name = %q", name)
 	}
 	got := entries(t, &buf)
 	names := make([]string, 0, len(got))
@@ -105,7 +97,7 @@ func TestArchiveFolderExcludesRepoAndJunk(t *testing.T) {
 func TestArchiveFolderWithoutIndexWritesNothing(t *testing.T) {
 	root := writeTree(t, map[string]string{"a.html": "a", "b.html": "b"})
 	var buf bytes.Buffer
-	if _, err := Archive(root, &buf); err == nil {
+	if err := Archive(root, &buf); err == nil {
 		t.Fatal("want error for folder without index.html")
 	}
 	if buf.Len() != 0 {
@@ -115,7 +107,7 @@ func TestArchiveFolderWithoutIndexWritesNothing(t *testing.T) {
 
 func TestArchiveMissingPath(t *testing.T) {
 	var buf bytes.Buffer
-	if _, err := Archive(filepath.Join(t.TempDir(), "nope"), &buf); err == nil {
+	if err := Archive(filepath.Join(t.TempDir(), "nope"), &buf); err == nil {
 		t.Fatal("want error for nonexistent path")
 	}
 	if buf.Len() != 0 {
@@ -123,11 +115,53 @@ func TestArchiveMissingPath(t *testing.T) {
 	}
 }
 
+// `serve <symlink-to-folder>` must upload the folder's contents, not an empty archive.
+func TestArchiveSymlinkedFolder(t *testing.T) {
+	root := writeTree(t, map[string]string{"index.html": "i", "css/a.css": "c"})
+	link := filepath.Join(t.TempDir(), "site")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Archive(link, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if got := entries(t, &buf); len(got) != 2 || got["index.html"] != "i" || got["css/a.css"] != "c" {
+		t.Fatalf("entries = %v, want index.html and css/a.css", got)
+	}
+}
+
+// A symlinked index.html would be skipped by the walk, so the server would get a folder without
+// one; reject it up front instead.
+func TestArchiveRejectsSymlinkedIndex(t *testing.T) {
+	root := writeTree(t, map[string]string{"real.html": "r"})
+	if err := os.Symlink(filepath.Join(root, "real.html"), filepath.Join(root, "index.html")); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := Archive(root, &buf); err == nil {
+		t.Fatal("want error for symlinked index.html")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("wrote %d bytes before rejecting", buf.Len())
+	}
+}
+
+func TestArchiveRejectsNonRegularPath(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Archive(os.DevNull, &buf); err == nil {
+		t.Fatal("want error for a device path")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("wrote %d bytes for a device path", buf.Len())
+	}
+}
+
 func TestArchiveRoundTripsThroughExtract(t *testing.T) {
 	files := map[string]string{"index.html": "index", "a/b/deep.js": "js", "img/x.png": "png"}
 	root := writeTree(t, files)
 	var buf bytes.Buffer
-	if _, err := Archive(root, &buf); err != nil {
+	if err := Archive(root, &buf); err != nil {
 		t.Fatal(err)
 	}
 	dst := t.TempDir()

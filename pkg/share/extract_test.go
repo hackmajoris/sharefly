@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +97,18 @@ func TestExtractTooLarge(t *testing.T) {
 	}
 }
 
+// Many empty entries fit under the byte cap, so the entry count is capped too (inode exhaustion).
+func TestExtractTooManyEntries(t *testing.T) {
+	entries := make([]entry, maxEntries+1)
+	for i := range entries {
+		entries[i] = file(fmt.Sprintf("f%d", i), "")
+	}
+	_, err := Extract(makeTarGz(t, entries...), t.TempDir(), 1<<20)
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+}
+
 func TestExtractAtCapSucceeds(t *testing.T) {
 	size, err := Extract(makeTarGz(t, file("a.txt", strings.Repeat("a", 1000))), t.TempDir(), 1000)
 	if err != nil || size != 1000 {
@@ -162,6 +175,8 @@ func TestDetectEntry(t *testing.T) {
 	}{
 		{"index at root", []string{"index.html", "a.css"}, "", false},
 		{"single file", []string{"report.html"}, "report.html", false},
+		{"single nested file", []string{"sub/report.html"}, "sub/report.html", false},
+		{"index.html is a directory", []string{"index.html/a.txt", "b.txt"}, "", true},
 		{"multiple files without index", []string{"a.html", "b.html"}, "", true},
 		{"empty", nil, "", true},
 	}

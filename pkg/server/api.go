@@ -3,6 +3,8 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,9 +51,9 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	id, err := a.newID()
+	id, err := share.NewID()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		internalError(w, err)
 		return
 	}
 	tmp := filepath.Join(a.tmpDir(), id)
@@ -62,6 +64,11 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 	var maxErr *http.MaxBytesError
 	if errors.Is(err, share.ErrTooLarge) || errors.As(err, &maxErr) {
 		writeError(w, http.StatusRequestEntityTooLarge, "upload too large")
+		return
+	}
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		internalError(w, err)
 		return
 	}
 	if err != nil {
@@ -75,7 +82,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	dst := filepath.Join(a.sharesDir(), id)
 	if err := os.Rename(tmp, dst); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		internalError(w, err)
 		return
 	}
 	now := time.Now().UTC()
@@ -92,32 +99,10 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.Store.Add(sh); err != nil {
 		os.RemoveAll(dst)
-		writeError(w, http.StatusInternalServerError, err.Error())
+		internalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, a.response(sh))
-}
-
-func (a *API) newID() (string, error) {
-	for range 5 {
-		id, err := share.NewID()
-		if err != nil {
-			return "", err
-		}
-		if _, err := a.Store.Get(id); err == nil {
-			continue
-		}
-		if exists(filepath.Join(a.sharesDir(), id)) || exists(filepath.Join(a.tmpDir(), id)) {
-			continue
-		}
-		return id, nil
-	}
-	return "", errors.New("could not generate a unique id")
-}
-
-func exists(path string) bool {
-	_, err := os.Lstat(path)
-	return !errors.Is(err, os.ErrNotExist)
 }
 
 func (a *API) list(w http.ResponseWriter, r *http.Request) {
@@ -136,10 +121,10 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := os.RemoveAll(filepath.Join(a.sharesDir(), id)); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		internalError(w, err)
 		return
 	}
-	if err := a.Store.Delete(id); err != nil {
+	if err := a.Store.Delete(id); err != nil && !errors.Is(err, share.ErrNotFound) {
 		writeStoreError(w, err)
 		return
 	}
@@ -154,11 +139,12 @@ func (a *API) renew(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if _, _, err := share.ParseTTL(req.TTL); err != nil {
+	d, never, err := share.ParseTTL(req.TTL)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sh, err := a.Store.Renew(r.PathValue("id"), req.TTL, time.Now().UTC())
+	sh, err := a.Store.Renew(r.PathValue("id"), d, never, time.Now().UTC())
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -176,7 +162,12 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeError(w, http.StatusInternalServerError, err.Error())
+	internalError(w, err)
+}
+
+func internalError(w http.ResponseWriter, err error) {
+	log.Printf("api: %v", err)
+	writeError(w, http.StatusInternalServerError, "internal server error")
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {

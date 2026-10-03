@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/hackmajoris/go-share/pkg/share"
 )
@@ -23,19 +24,28 @@ type Client struct {
 	BaseURL string
 }
 
+var apiClient = &http.Client{Timeout: 30 * time.Second}
+
 func (c *Client) Upload(path, ttl string) (Share, error) {
+	if _, _, err := share.ParseTTL(ttl); err != nil {
+		return Share{}, err
+	}
 	if _, err := validate(path); err != nil {
+		return Share{}, err
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
 		return Share{}, err
 	}
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		_, err := Archive(path, pw)
+		err := Archive(path, pw)
 		pw.CloseWithError(err)
 		done <- err
 	}()
 
-	q := url.Values{"ttl": {ttl}, "name": {filepath.Base(filepath.Clean(path))}}
+	q := url.Values{"ttl": {ttl}, "name": {filepath.Base(abs)}}
 	req, err := http.NewRequest(http.MethodPost, c.endpoint("/shares?"+q.Encode()), pr)
 	if err != nil {
 		pr.Close()
@@ -56,7 +66,7 @@ func (c *Client) Upload(path, ttl string) (Share, error) {
 }
 
 func (c *Client) List() ([]Share, error) {
-	resp, err := http.Get(c.endpoint("/shares"))
+	resp, err := apiClient.Get(c.endpoint("/shares"))
 	var shares []Share
 	return shares, c.handle(resp, err, http.StatusOK, &shares)
 }
@@ -66,7 +76,7 @@ func (c *Client) Delete(id string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apiClient.Do(req)
 	return c.handle(resp, err, http.StatusNoContent, nil)
 }
 
@@ -75,7 +85,7 @@ func (c *Client) Renew(id, ttl string) (Share, error) {
 	if err != nil {
 		return Share{}, err
 	}
-	resp, err := http.Post(c.endpoint("/shares/"+url.PathEscape(id)+"/renew"), "application/json", bytes.NewReader(body))
+	resp, err := apiClient.Post(c.endpoint("/shares/"+url.PathEscape(id)+"/renew"), "application/json", bytes.NewReader(body))
 	var sh Share
 	return sh, c.handle(resp, err, http.StatusOK, &sh)
 }

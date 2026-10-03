@@ -26,30 +26,30 @@ func validate(path string) (fs.FileInfo, error) {
 	return fi, nil
 }
 
-func Archive(path string, w io.Writer) (name string, err error) {
+func Archive(path string, w io.Writer) error {
 	fi, err := validate(path)
 	if err != nil {
-		return "", err
+		return err
 	}
-	name = filepath.Base(filepath.Clean(path))
+	root, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
 
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 	if fi.IsDir() {
-		err = addDir(tw, path)
+		err = addDir(tw, root)
 	} else {
-		err = addFile(tw, path, name, fi)
+		err = addFile(tw, root, filepath.Base(path), fi)
 	}
 	if err != nil {
-		return "", err
+		return err
 	}
 	if err := tw.Close(); err != nil {
-		return "", err
+		return err
 	}
-	if err := gz.Close(); err != nil {
-		return "", err
-	}
-	return name, nil
+	return gz.Close()
 }
 
 func addDir(tw *tar.Writer, root string) error {

@@ -13,6 +13,8 @@ import (
 
 var ErrTooLarge = errors.New("archive too large")
 
+const maxEntries = 10000
+
 func Extract(r io.Reader, dst string, maxBytes int64) (size int64, err error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -23,13 +25,16 @@ func Extract(r io.Reader, dst string, maxBytes int64) (size int64, err error) {
 		return 0, err
 	}
 	tr := tar.NewReader(gz)
-	for {
+	for n := 0; ; n++ {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			return size, nil
 		}
 		if err != nil {
 			return size, err
+		}
+		if n >= maxEntries {
+			return size, ErrTooLarge
 		}
 		if !filepath.IsLocal(hdr.Name) {
 			return size, fmt.Errorf("unsafe path %q", hdr.Name)

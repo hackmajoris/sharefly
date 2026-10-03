@@ -167,7 +167,10 @@ func TestAPIUploadRejections(t *testing.T) {
 		code int
 	}{
 		{"bad ttl", "/shares?ttl=7w", tarGz(t, regular("index.html", "x")), http.StatusBadRequest},
-		{"traversal", "/shares", tarGz(t, regular("../evil.html", "x")), http.StatusBadRequest},
+		{"traversal", "/shares", tarGz(t, regular("../../evil.html", "x")), http.StatusBadRequest},
+		{"absolute path", "/shares", tarGz(t, regular("/abs.html", "x")), http.StatusBadRequest},
+		{"hardlink", "/shares", tarGz(t, tarEntry{hdr: tar.Header{Name: "hl", Typeflag: tar.TypeLink, Linkname: "../../shares.json"}}), http.StatusBadRequest},
+		{"fifo", "/shares", tarGz(t, tarEntry{hdr: tar.Header{Name: "pipe", Typeflag: tar.TypeFifo}}), http.StatusBadRequest},
 		{"symlink", "/shares", tarGz(t, tarEntry{hdr: tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"}}), http.StatusBadRequest},
 		{"not gzip", "/shares", bytes.NewBufferString("plain"), http.StatusBadRequest},
 		{"multi file without index", "/shares", tarGz(t, regular("a.html", "a"), regular("b.html", "b")), http.StatusBadRequest},
@@ -225,5 +228,79 @@ func TestAPIRenewBadTTL(t *testing.T) {
 		if rec := do(t, a, http.MethodPost, "/shares/"+up.ID+"/renew", strings.NewReader(body)); rec.Code != http.StatusBadRequest {
 			t.Fatalf("renew %s: %d", body, rec.Code)
 		}
+	}
+}
+
+// The public link is built from the stored entry, so names with spaces must be escaped to work.
+func TestAPIURLEscapesEntryAndTrimsPublicURL(t *testing.T) {
+	a := newTestAPI(t, 1024)
+	a.PublicURL = "https://share.example.com"
+	up := decode[shareResponse](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("my report.html", "r"))))
+	if want := "https://share.example.com/" + up.ID + "/my%20report.html"; up.URL != want {
+		t.Fatalf("url = %q, want %q", up.URL, want)
+	}
+}
+
+// Delete removes the dir before the record: if the dir can't be removed the record must stay,
+// so the still-public share remains listed and deletable.
+func TestAPIDeleteKeepsRecordWhenDirRemovalFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission checks don't apply to root")
+	}
+	a := newTestAPI(t, 1024)
+	up := decode[shareResponse](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x"))))
+	sharesDir := filepath.Join(a.DataDir, "shares")
+	if err := os.Chmod(sharesDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+
+	rec := do(t, a, http.MethodDelete, "/shares/"+up.ID, nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("delete: %d %s, want 500", rec.Code, rec.Body)
+	}
+	if _, err := a.Store.Get(up.ID); err != nil {
+		t.Fatalf("record dropped while dir is still public: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sharesDir, up.ID)); err != nil {
+		t.Fatalf("share dir: %v", err)
+	}
+}
+
+// If the record can't be saved, the extracted dir must not stay public with nothing to expire it.
+func TestAPIUploadRemovesDirWhenRecordSaveFails(t *testing.T) {
+	a := newTestAPI(t, 1024)
+	store, err := share.Open(filepath.Join(a.DataDir, "missing", "shares.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Store = store
+	rec := do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x")))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("upload: %d %s, want 500", rec.Code, rec.Body)
+	}
+	if names := dirEntries(t, filepath.Join(a.DataDir, "shares")); len(names) != 0 {
+		t.Fatalf("unrecorded share left public: %v", names)
+	}
+}
+
+// Server-side filesystem failures are not the client's fault (500), and must not leak server paths.
+func TestAPIUploadFilesystemErrorIs500WithoutPaths(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission checks don't apply to root")
+	}
+	a := newTestAPI(t, 1024)
+	tmpDir := filepath.Join(a.DataDir, "tmp")
+	if err := os.Chmod(tmpDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(tmpDir, 0o755) })
+
+	rec := do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x")))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("upload: %d %s, want 500", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), a.DataDir) {
+		t.Fatalf("error leaks server path: %s", rec.Body)
 	}
 }
