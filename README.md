@@ -28,16 +28,23 @@ go-share serve x.html ──tailnet──▶ go-share server
 - At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. If that cleanup fails, the server exits with an error instead of serving (launchd retries). Don't put files there by hand.
 - go-share never talks to cloudflared or the Cloudflare API. The tunnel is configured in the Cloudflare dashboard.
 
-## Build / install
+## Install
 
-Requires Go 1.27.1+.
+```
+brew install --cask hackmajoris/apps/go-share
+```
+
+Install it on the mini and on each client. The binary lands in `$(brew --prefix)/bin/go-share`: `/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel. Upgrade with `brew upgrade --cask go-share`.
+
+From source (Go 1.27.1+):
 
 ```
 go build -o go-share ./cmd/go-share
-sudo install -m 755 go-share /usr/local/bin/go-share
 ```
 
-Install the same binary on the mini and on each client.
+## Release
+
+Push a `v*` tag. The release workflow runs GoReleaser, which publishes the GitHub release and updates the cask in `hackmajoris/homebrew-apps`. It needs a `GORELEASER_GITHUB_TOKEN` secret with write access to both repos.
 
 ## Client usage
 
@@ -91,12 +98,12 @@ The archive may hold only regular files and directories with relative paths, at 
    brew install cloudflared
    sudo cloudflared service install <TOKEN>
    ```
-3. **Binary.** Install `go-share` to `/usr/local/bin/go-share` (see above).
+3. **Binary.** `brew install --cask hackmajoris/apps/go-share` (see above).
 4. **Data dir.** Create it as `YOUR_USER` (not with `sudo`) before loading the plist. launchd does not create the log file's parent directory, and the server, which runs as `YOUR_USER`, must be able to write it.
    ```
    mkdir -p ~/go-share
    ```
-5. **Plist.** Edit `deploy/com.go-share.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/usr/local/bin/go-share`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/go-share/server.log`) or add a `newsyslog` rule.
+5. **Plist.** Edit `deploy/com.go-share.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/opt/homebrew/bin/go-share` (Intel: `/usr/local/bin/go-share`). After `brew upgrade --cask go-share`, restart with `sudo launchctl kickstart -k system/com.go-share.server`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/go-share/server.log`) or add a `newsyslog` rule.
    ```
    sudo cp deploy/com.go-share.server.plist /Library/LaunchDaemons/
    sudo chown root:wheel /Library/LaunchDaemons/com.go-share.server.plist

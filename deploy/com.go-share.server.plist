@@ -8,7 +8,7 @@
 	<string>YOUR_USER</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/local/bin/go-share</string>
+		<string>/opt/homebrew/bin/go-share</string>
 		<string>server</string>
 		<string>--api-addr</string>
 		<string>TAILSCALE_IP:8787</string>

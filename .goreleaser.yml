@@ -1,0 +1,45 @@
+version: 2
+
+release:
+  name_template: Version {{ .Version }}
+
+builds:
+  - id: go-share
+    main: ./cmd/go-share
+    binary: go-share
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: go-share
+    ids:
+      - go-share
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+homebrew_casks:
+  - name: go-share
+    ids:
+      - go-share
+    repository:
+      owner: hackmajoris
+      name: homebrew-apps
+    homepage: https://github.com/hackmajoris/go-share
+    description: Share static HTML from your tailnet via a public URL through a Cloudflare Tunnel
+    binaries:
+      - go-share
+    # the release binaries are unsigned, so macOS quarantines what brew downloads
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/go-share"]
+          end
