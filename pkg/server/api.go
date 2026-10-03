@@ -24,11 +24,6 @@ type API struct {
 	MaxBytes  int64
 }
 
-type shareResponse struct {
-	share.Share
-	URL string `json:"url"`
-}
-
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /shares", a.upload)
@@ -38,8 +33,8 @@ func (a *API) Handler() http.Handler {
 	return mux
 }
 
-func (a *API) sharesDir() string { return filepath.Join(a.DataDir, "shares") }
-func (a *API) tmpDir() string    { return filepath.Join(a.DataDir, "tmp") }
+func (a *API) SharesDir() string { return filepath.Join(a.DataDir, "shares") }
+func (a *API) TmpDir() string    { return filepath.Join(a.DataDir, "tmp") }
 
 func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 	ttl := r.URL.Query().Get("ttl")
@@ -56,7 +51,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
-	tmp := filepath.Join(a.tmpDir(), id)
+	tmp := filepath.Join(a.TmpDir(), id)
 	defer os.RemoveAll(tmp)
 
 	body := http.MaxBytesReader(w, r.Body, a.MaxBytes)
@@ -80,7 +75,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	dst := filepath.Join(a.sharesDir(), id)
+	dst := filepath.Join(a.SharesDir(), id)
 	if err := os.Rename(tmp, dst); err != nil {
 		internalError(w, err)
 		return
@@ -107,7 +102,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) list(w http.ResponseWriter, r *http.Request) {
 	shares := a.Store.List()
-	out := make([]shareResponse, 0, len(shares))
+	out := make([]share.Link, 0, len(shares))
 	for _, sh := range shares {
 		out = append(out, a.response(sh))
 	}
@@ -120,7 +115,7 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	if err := os.RemoveAll(filepath.Join(a.sharesDir(), id)); err != nil {
+	if err := os.RemoveAll(filepath.Join(a.SharesDir(), id)); err != nil {
 		internalError(w, err)
 		return
 	}
@@ -152,9 +147,9 @@ func (a *API) renew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.response(sh))
 }
 
-func (a *API) response(sh share.Share) shareResponse {
+func (a *API) response(sh share.Share) share.Link {
 	path := (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath()
-	return shareResponse{Share: sh, URL: strings.TrimSuffix(a.PublicURL, "/") + path}
+	return share.Link{Share: sh, URL: strings.TrimSuffix(a.PublicURL, "/") + path}
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {

@@ -22,6 +22,7 @@ const (
 	maxUploadBytes    = 100 << 20
 	sweepInterval     = 5 * time.Minute
 	readHeaderTimeout = 10 * time.Second
+	shutdownTimeout   = 10 * time.Second
 )
 
 type serverConfig struct {
@@ -65,16 +66,16 @@ func runServer(args []string) error {
 	if err != nil {
 		return err
 	}
-	sharesDir := filepath.Join(cfg.dataDir, "shares")
-	tmpDir := filepath.Join(cfg.dataDir, "tmp")
+	store, err := share.Open(filepath.Join(cfg.dataDir, "shares.json"))
+	if err != nil {
+		return err
+	}
+	api := &server.API{Store: store, DataDir: cfg.dataDir, PublicURL: cfg.publicURL, MaxBytes: maxUploadBytes}
+	sharesDir, tmpDir := api.SharesDir(), api.TmpDir()
 	for _, d := range []string{sharesDir, tmpDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
-	}
-	store, err := share.Open(filepath.Join(cfg.dataDir, "shares.json"))
-	if err != nil {
-		return err
 	}
 	apiLn, err := net.Listen("tcp", cfg.apiAddr)
 	if err != nil {
@@ -93,7 +94,6 @@ func runServer(args []string) error {
 		log.Printf("sweep: %v", err)
 	}
 
-	api := &server.API{Store: store, DataDir: cfg.dataDir, PublicURL: cfg.publicURL, MaxBytes: maxUploadBytes}
 	servers := []*http.Server{
 		{Handler: api.Handler(), ReadHeaderTimeout: readHeaderTimeout},
 		{Handler: server.FilesHandler(sharesDir), ReadHeaderTimeout: readHeaderTimeout},
@@ -125,10 +125,12 @@ loop:
 		}
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	for _, s := range servers {
-		s.Shutdown(shutdownCtx)
+		if err := s.Shutdown(shutdownCtx); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
 	}
 	return serveErr
 }

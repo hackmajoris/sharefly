@@ -39,17 +39,19 @@ func isRegularFile(fsys http.FileSystem, name string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
+const cacheControl = "private, no-store"
+
 type noStoreWriter struct {
 	http.ResponseWriter
 }
 
 func (w noStoreWriter) WriteHeader(code int) {
-	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Cache-Control", cacheControl)
 	w.ResponseWriter.WriteHeader(code)
 }
 
 func (w noStoreWriter) Write(b []byte) (int, error) {
-	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Cache-Control", cacheControl)
 	return w.ResponseWriter.Write(b)
 }
 

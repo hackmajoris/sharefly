@@ -58,7 +58,7 @@ func entries(t *testing.T, r io.Reader) map[string]string {
 func TestArchiveSingleFile(t *testing.T) {
 	root := writeTree(t, map[string]string{"report.html": "<h1>r</h1>"})
 	var buf bytes.Buffer
-	if err := Archive(filepath.Join(root, "report.html"), &buf); err != nil {
+	if _, err := Archive(filepath.Join(root, "report.html"), &buf); err != nil {
 		t.Fatal(err)
 	}
 	got := entries(t, &buf)
@@ -80,8 +80,12 @@ func TestArchiveFolderExcludesRepoAndJunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Archive(root, &buf); err != nil {
+	skipped, err := Archive(root, &buf)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Equal(skipped, []string{"leak"}) {
+		t.Fatalf("skipped = %v, want [leak] so the user is told what was left out", skipped)
 	}
 	got := entries(t, &buf)
 	names := make([]string, 0, len(got))
@@ -97,7 +101,7 @@ func TestArchiveFolderExcludesRepoAndJunk(t *testing.T) {
 func TestArchiveFolderWithoutIndexWritesNothing(t *testing.T) {
 	root := writeTree(t, map[string]string{"a.html": "a", "b.html": "b"})
 	var buf bytes.Buffer
-	if err := Archive(root, &buf); err == nil {
+	if _, err := Archive(root, &buf); err == nil {
 		t.Fatal("want error for folder without index.html")
 	}
 	if buf.Len() != 0 {
@@ -107,7 +111,7 @@ func TestArchiveFolderWithoutIndexWritesNothing(t *testing.T) {
 
 func TestArchiveMissingPath(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Archive(filepath.Join(t.TempDir(), "nope"), &buf); err == nil {
+	if _, err := Archive(filepath.Join(t.TempDir(), "nope"), &buf); err == nil {
 		t.Fatal("want error for nonexistent path")
 	}
 	if buf.Len() != 0 {
@@ -123,7 +127,7 @@ func TestArchiveSymlinkedFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Archive(link, &buf); err != nil {
+	if _, err := Archive(link, &buf); err != nil {
 		t.Fatal(err)
 	}
 	if got := entries(t, &buf); len(got) != 2 || got["index.html"] != "i" || got["css/a.css"] != "c" {
@@ -139,7 +143,7 @@ func TestArchiveRejectsSymlinkedIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := Archive(root, &buf); err == nil {
+	if _, err := Archive(root, &buf); err == nil {
 		t.Fatal("want error for symlinked index.html")
 	}
 	if buf.Len() != 0 {
@@ -149,7 +153,7 @@ func TestArchiveRejectsSymlinkedIndex(t *testing.T) {
 
 func TestArchiveRejectsNonRegularPath(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Archive(os.DevNull, &buf); err == nil {
+	if _, err := Archive(os.DevNull, &buf); err == nil {
 		t.Fatal("want error for a device path")
 	}
 	if buf.Len() != 0 {
@@ -161,7 +165,7 @@ func TestArchiveRoundTripsThroughExtract(t *testing.T) {
 	files := map[string]string{"index.html": "index", "a/b/deep.js": "js", "img/x.png": "png"}
 	root := writeTree(t, files)
 	var buf bytes.Buffer
-	if err := Archive(root, &buf); err != nil {
+	if _, err := Archive(root, &buf); err != nil {
 		t.Fatal(err)
 	}
 	dst := t.TempDir()

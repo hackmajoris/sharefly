@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/client"
 	"github.com/hackmajoris/go-share/pkg/share"
 )
 
@@ -51,7 +50,7 @@ func TestParseClientArgsDefaultsAndArity(t *testing.T) {
 func TestPrintShares(t *testing.T) {
 	exp := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
 	var buf bytes.Buffer
-	printShares(&buf, []client.Share{
+	printShares(&buf, []share.Link{
 		{Share: share.Share{ID: "aaaaaaaaaa", Name: "a.html", ExpiresAt: &exp}, URL: "https://s/aaaaaaaaaa/a.html"},
 		{Share: share.Share{ID: "bbbbbbbbbb", Name: "site"}, URL: "https://s/bbbbbbbbbb/"},
 	})

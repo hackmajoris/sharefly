@@ -21,6 +21,11 @@ type Share struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 
+type Link struct {
+	Share
+	URL string `json:"url"`
+}
+
 type Store struct {
 	mu     sync.Mutex
 	path   string
@@ -78,7 +83,7 @@ func (s *Store) Renew(id string, d time.Duration, never bool, now time.Time) (Sh
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	i := s.index(id)
-	if i < 0 || s.shares[i].ExpiresAt != nil && !s.shares[i].ExpiresAt.After(now) {
+	if i < 0 || (s.shares[i].ExpiresAt != nil && !s.shares[i].ExpiresAt.After(now)) {
 		return Share{}, ErrNotFound
 	}
 	next := slices.Clone(s.shares)

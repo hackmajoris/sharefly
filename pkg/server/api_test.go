@@ -100,7 +100,7 @@ func TestAPIRoundTrip(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
 	}
-	up := decode[shareResponse](t, rec)
+	up := decode[share.Link](t, rec)
 	if up.Name != "site" || up.Entry != "" || up.Size != int64(len("hello")+len("body{}")) {
 		t.Fatalf("unexpected record %+v", up)
 	}
@@ -119,13 +119,13 @@ func TestAPIRoundTrip(t *testing.T) {
 	}
 
 	rec = do(t, a, http.MethodGet, "/shares", nil)
-	list := decode[[]shareResponse](t, rec)
+	list := decode[[]share.Link](t, rec)
 	if rec.Code != http.StatusOK || len(list) != 1 || list[0].ID != up.ID || list[0].URL != up.URL {
 		t.Fatalf("list: %d %s", rec.Code, rec.Body)
 	}
 
 	rec = do(t, a, http.MethodPost, "/shares/"+up.ID+"/renew", strings.NewReader(`{"ttl":"never"}`))
-	renewed := decode[shareResponse](t, rec)
+	renewed := decode[share.Link](t, rec)
 	if rec.Code != http.StatusOK || renewed.ExpiresAt != nil || renewed.URL != up.URL {
 		t.Fatalf("renew: %d %s", rec.Code, rec.Body)
 	}
@@ -137,7 +137,7 @@ func TestAPIRoundTrip(t *testing.T) {
 	if _, err := os.Stat(shareDir); !os.IsNotExist(err) {
 		t.Fatalf("share dir still on disk after delete: %v", err)
 	}
-	if list := decode[[]shareResponse](t, do(t, a, http.MethodGet, "/shares", nil)); len(list) != 0 {
+	if list := decode[[]share.Link](t, do(t, a, http.MethodGet, "/shares", nil)); len(list) != 0 {
 		t.Fatalf("record still listed after delete: %v", list)
 	}
 }
@@ -148,7 +148,7 @@ func TestAPIUploadSingleFileEntryAndDefaultTTL(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
 	}
-	up := decode[shareResponse](t, rec)
+	up := decode[share.Link](t, rec)
 	if up.Entry != "report.html" || up.URL != "https://share.example.com/"+up.ID+"/report.html" {
 		t.Fatalf("unexpected record %+v", up)
 	}
@@ -223,7 +223,7 @@ func TestAPIUnknownID(t *testing.T) {
 
 func TestAPIRenewBadTTL(t *testing.T) {
 	a := newTestAPI(t, 1024)
-	up := decode[shareResponse](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x"))))
+	up := decode[share.Link](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x"))))
 	for _, body := range []string{`{"ttl":"7w"}`, `{}`, `not json`} {
 		if rec := do(t, a, http.MethodPost, "/shares/"+up.ID+"/renew", strings.NewReader(body)); rec.Code != http.StatusBadRequest {
 			t.Fatalf("renew %s: %d", body, rec.Code)
@@ -235,7 +235,7 @@ func TestAPIRenewBadTTL(t *testing.T) {
 func TestAPIURLEscapesEntryAndTrimsPublicURL(t *testing.T) {
 	a := newTestAPI(t, 1024)
 	a.PublicURL = "https://share.example.com"
-	up := decode[shareResponse](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("my report.html", "r"))))
+	up := decode[share.Link](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("my report.html", "r"))))
 	if want := "https://share.example.com/" + up.ID + "/my%20report.html"; up.URL != want {
 		t.Fatalf("url = %q, want %q", up.URL, want)
 	}
@@ -248,7 +248,7 @@ func TestAPIDeleteKeepsRecordWhenDirRemovalFails(t *testing.T) {
 		t.Skip("permission checks don't apply to root")
 	}
 	a := newTestAPI(t, 1024)
-	up := decode[shareResponse](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x"))))
+	up := decode[share.Link](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x"))))
 	sharesDir := filepath.Join(a.DataDir, "shares")
 	if err := os.Chmod(sharesDir, 0o500); err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hackmajoris/go-share/pkg/client"
+	"github.com/hackmajoris/go-share/pkg/share"
 )
 
 const defaultServer = "http://macmini:8787"
@@ -52,7 +53,10 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	sh, err := c.Upload(pos[0], ttl)
+	sh, skipped, err := c.Upload(pos[0], ttl)
+	for _, rel := range skipped {
+		fmt.Fprintf(os.Stderr, "warning: skipping %s (not a regular file)\n", rel)
+	}
 	if err != nil {
 		return err
 	}
@@ -73,7 +77,7 @@ func runList(args []string) error {
 	return nil
 }
 
-func printShares(w io.Writer, shares []client.Share) {
+func printShares(w io.Writer, shares []share.Link) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tEXPIRES\tURL")
 	for _, sh := range shares {
@@ -104,6 +108,6 @@ func runRenew(args []string) error {
 	if err != nil {
 		return err
 	}
-	printShares(os.Stdout, []client.Share{sh})
+	printShares(os.Stdout, []share.Link{sh})
 	return nil
 }

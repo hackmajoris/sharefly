@@ -49,8 +49,8 @@ func Extract(r io.Reader, dst string, maxBytes int64) (size int64, err error) {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return size, err
 			}
-			n, err := writeFile(target, tr, maxBytes-size)
-			size += n
+			written, err := writeFile(target, tr, maxBytes-size)
+			size += written
 			if err != nil {
 				return size, err
 			}

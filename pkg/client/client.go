@@ -15,32 +15,32 @@ import (
 	"github.com/hackmajoris/go-share/pkg/share"
 )
 
-type Share struct {
-	share.Share
-	URL string `json:"url"`
-}
-
 type Client struct {
 	BaseURL string
 }
 
-var apiClient = &http.Client{Timeout: 30 * time.Second}
+var (
+	apiClient    = &http.Client{Timeout: 30 * time.Second}
+	uploadClient = &http.Client{}
+)
 
-func (c *Client) Upload(path, ttl string) (Share, error) {
+func (c *Client) Upload(path, ttl string) (sh share.Link, skipped []string, err error) {
 	if _, _, err := share.ParseTTL(ttl); err != nil {
-		return Share{}, err
+		return sh, nil, err
 	}
-	if _, err := validate(path); err != nil {
-		return Share{}, err
+	fi, err := validate(path)
+	if err != nil {
+		return sh, nil, err
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return Share{}, err
+		return sh, nil, err
 	}
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		err := Archive(path, pw)
+		var err error
+		skipped, err = archive(path, fi, pw)
 		pw.CloseWithError(err)
 		done <- err
 	}()
@@ -50,24 +50,23 @@ func (c *Client) Upload(path, ttl string) (Share, error) {
 	if err != nil {
 		pr.Close()
 		<-done
-		return Share{}, err
+		return sh, nil, err
 	}
 	req.Header.Set("Content-Type", "application/gzip")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := uploadClient.Do(req)
 	pr.Close()
 	if archErr := <-done; archErr != nil && !errors.Is(archErr, io.ErrClosedPipe) {
 		if resp != nil {
 			resp.Body.Close()
 		}
-		return Share{}, archErr
+		return sh, nil, archErr
 	}
-	var sh Share
-	return sh, c.handle(resp, err, http.StatusCreated, &sh)
+	return sh, skipped, c.handle(resp, err, http.StatusCreated, &sh)
 }
 
-func (c *Client) List() ([]Share, error) {
+func (c *Client) List() ([]share.Link, error) {
 	resp, err := apiClient.Get(c.endpoint("/shares"))
-	var shares []Share
+	var shares []share.Link
 	return shares, c.handle(resp, err, http.StatusOK, &shares)
 }
 
@@ -80,13 +79,13 @@ func (c *Client) Delete(id string) error {
 	return c.handle(resp, err, http.StatusNoContent, nil)
 }
 
-func (c *Client) Renew(id, ttl string) (Share, error) {
+func (c *Client) Renew(id, ttl string) (share.Link, error) {
 	body, err := json.Marshal(map[string]string{"ttl": ttl})
 	if err != nil {
-		return Share{}, err
+		return share.Link{}, err
 	}
 	resp, err := apiClient.Post(c.endpoint("/shares/"+url.PathEscape(id)+"/renew"), "application/json", bytes.NewReader(body))
-	var sh Share
+	var sh share.Link
 	return sh, c.handle(resp, err, http.StatusOK, &sh)
 }
 

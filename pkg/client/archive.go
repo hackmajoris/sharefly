@@ -26,34 +26,38 @@ func validate(path string) (fs.FileInfo, error) {
 	return fi, nil
 }
 
-func Archive(path string, w io.Writer) error {
+func Archive(path string, w io.Writer) (skipped []string, err error) {
 	fi, err := validate(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return archive(path, fi, w)
+}
+
+func archive(path string, fi fs.FileInfo, w io.Writer) (skipped []string, err error) {
 	root, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 	if fi.IsDir() {
-		err = addDir(tw, root)
+		skipped, err = addDir(tw, root)
 	} else {
 		err = addFile(tw, root, filepath.Base(path), fi)
 	}
 	if err != nil {
-		return err
+		return skipped, err
 	}
 	if err := tw.Close(); err != nil {
-		return err
+		return skipped, err
 	}
-	return gz.Close()
+	return skipped, gz.Close()
 }
 
-func addDir(tw *tar.Writer, root string) error {
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+func addDir(tw *tar.Writer, root string) (skipped []string, err error) {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -71,7 +75,7 @@ func addDir(tw *tar.Writer, root string) error {
 			return err
 		}
 		if !d.Type().IsRegular() {
-			fmt.Fprintf(os.Stderr, "warning: skipping %s (not a regular file)\n", rel)
+			skipped = append(skipped, filepath.ToSlash(rel))
 			return nil
 		}
 		fi, err := d.Info()
@@ -80,6 +84,7 @@ func addDir(tw *tar.Writer, root string) error {
 		}
 		return addFile(tw, path, filepath.ToSlash(rel), fi)
 	})
+	return skipped, err
 }
 
 func addFile(tw *tar.Writer, path, name string, fi fs.FileInfo) error {

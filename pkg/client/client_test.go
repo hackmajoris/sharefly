@@ -39,7 +39,7 @@ func TestClientRoundTrip(t *testing.T) {
 	c, dataDir := newTestServer(t)
 	site := writeTree(t, map[string]string{"index.html": "hi", "app.js": "x"})
 
-	up, err := c.Upload(site, "1h")
+	up, _, err := c.Upload(site, "1h")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,13 +74,29 @@ func TestClientRoundTrip(t *testing.T) {
 	}
 }
 
+// Upload must hand skipped paths back to the caller, which owns user-facing output.
+func TestClientUploadReportsSkipped(t *testing.T) {
+	c, _ := newTestServer(t)
+	site := writeTree(t, map[string]string{"index.html": "hi"})
+	if err := os.Symlink("/etc/passwd", filepath.Join(site, "leak")); err != nil {
+		t.Fatal(err)
+	}
+	_, skipped, err := c.Upload(site, "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 || skipped[0] != "leak" {
+		t.Fatalf("skipped = %v, want [leak]", skipped)
+	}
+}
+
 func TestClientUploadSingleFileURLPointsAtFile(t *testing.T) {
 	c, _ := newTestServer(t)
 	f := filepath.Join(t.TempDir(), "report.html")
 	if err := os.WriteFile(f, []byte("r"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	up, err := c.Upload(f, "7d")
+	up, _, err := c.Upload(f, "7d")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +154,7 @@ func connCounter(t *testing.T) (*Client, func() int) {
 func TestClientUploadNoIndexFailsBeforeNetwork(t *testing.T) {
 	c, count := connCounter(t)
 	site := writeTree(t, map[string]string{"a.html": "a", "b.html": "b"})
-	_, err := c.Upload(site, "7d")
+	_, _, err := c.Upload(site, "7d")
 	if err == nil || !strings.Contains(err.Error(), "index.html") {
 		t.Fatalf("err = %v, want local index.html error rather than a server error", err)
 	}
@@ -154,7 +170,7 @@ func TestClientUploadBadTTLFailsBeforeNetwork(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Upload(f, "7w"); err == nil || !strings.Contains(err.Error(), "invalid ttl") {
+	if _, _, err := c.Upload(f, "7w"); err == nil || !strings.Contains(err.Error(), "invalid ttl") {
 		t.Fatalf("err = %v, want invalid ttl error", err)
 	}
 	if n := count(); n != 0 {
@@ -167,7 +183,7 @@ func TestClientUploadDotUsesFolderName(t *testing.T) {
 	c, _ := newTestServer(t)
 	site := writeTree(t, map[string]string{"index.html": "hi"})
 	t.Chdir(site)
-	up, err := c.Upload(".", "1h")
+	up, _, err := c.Upload(".", "1h")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +201,7 @@ func TestClientUploadTooLargeSurfacesServerError(t *testing.T) {
 	if err := os.WriteFile(f, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Upload(f, "7d"); err == nil || !strings.Contains(err.Error(), "too large") {
+	if _, _, err := c.Upload(f, "7d"); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("err = %v, want server's upload too large message", err)
 	}
 }
@@ -201,7 +217,7 @@ func TestClientUploadArchiveErrorWins(t *testing.T) {
 	if err := os.Chmod(filepath.Join(site, "locked.js"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Upload(site, "7d"); err == nil || !errors.Is(err, fs.ErrPermission) {
+	if _, _, err := c.Upload(site, "7d"); err == nil || !errors.Is(err, fs.ErrPermission) {
 		t.Fatalf("err = %v, want local permission error", err)
 	}
 }
@@ -219,7 +235,7 @@ func TestClientUnreachable(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, upErr := c.Upload(f, "7d")
+	_, _, upErr := c.Upload(f, "7d")
 	_, listErr := c.List()
 	_, renewErr := c.Renew("x", "7d")
 	for _, err := range []error{upErr, listErr, renewErr, c.Delete("x")} {
@@ -260,7 +276,7 @@ func TestClientNonJSONResponses(t *testing.T) {
 
 func TestClientUploadMissingPath(t *testing.T) {
 	c, count := connCounter(t)
-	if _, err := c.Upload(filepath.Join(t.TempDir(), "nope"), "7d"); err == nil {
+	if _, _, err := c.Upload(filepath.Join(t.TempDir(), "nope"), "7d"); err == nil {
 		t.Fatal("want error for nonexistent path")
 	}
 	if n := count(); n != 0 {

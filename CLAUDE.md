@@ -20,7 +20,7 @@ Invariants (keep when changing code):
 - The server binds both listeners before Reconcile/Sweep, so a second instance never touches live data.
 
 Contracts:
-- `server.API` assumes `<DataDir>/shares` and `<DataDir>/tmp` exist; only `runServer` creates them.
+- `server.API` owns the dir names (`SharesDir()`, `TmpDir()`) and assumes they exist; only `runServer` creates them.
 - `maxUploadBytes` in `cmd/go-share/server.go` must match the 100MB in README.
 - Client archive and server extract agree on format (regular-file entries, slash-separated relative paths); `TestArchiveRoundTripsThroughExtract` guards it.
 - Tests use `httptest` + `t.TempDir()`; safety tests name the guarantee they protect.
