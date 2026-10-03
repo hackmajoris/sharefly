@@ -10,7 +10,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 func writeTree(t *testing.T, files map[string]string) string {

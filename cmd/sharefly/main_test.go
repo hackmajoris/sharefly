@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hackmajoris/go-share/pkg/server"
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/server"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 func captureStdout(t *testing.T, f func() int) (int, string) {

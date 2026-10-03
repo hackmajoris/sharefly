@@ -1,19 +1,19 @@
-# go-share
+# sharefly
 
 Share a static HTML file or folder from any device on your tailnet via a public URL served from a home server (e.g. a Mac mini) through a Cloudflare Tunnel.
 
 ```
-$ go-share serve report.html
+$ sharefly serve report.html
 https://share.yourdomain.com/k7f3x9qa2m/report.html
 ```
 
-One binary, two roles: `go-share server` on the mini, `serve`/`ls`/`rm`/`renew` on laptops. Standard library only.
+One binary, two roles: `sharefly server` on the mini, `serve`/`ls`/`rm`/`renew` on laptops. Standard library only.
 
 ## Architecture
 
 ```
 laptop                                 mac mini
-go-share serve x.html ──tailnet──▶ go-share server
+sharefly serve x.html ──tailnet──▶ sharefly server
                                    ├─ API    <tailscale-ip>:8787  (tailnet only)
                                    ├─ files  127.0.0.1:8080       (no dir listing,
                                    │                               Cache-Control: private, no-store)
@@ -26,20 +26,20 @@ go-share serve x.html ──tailnet──▶ go-share server
 - Each share gets a random 10-char ID. The unguessable link is the only access control on the public side.
 - Expired shares are swept at startup and every 5 minutes, so an expired share can stay reachable for up to 5 minutes.
 - At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. If that cleanup fails, the server exits with an error instead of serving (launchd retries). Don't put files there by hand.
-- go-share never talks to cloudflared or the Cloudflare API. The tunnel is configured in the Cloudflare dashboard.
+- sharefly never talks to cloudflared or the Cloudflare API. The tunnel is configured in the Cloudflare dashboard.
 
 ## Install
 
 ```
-brew install --cask hackmajoris/apps/go-share
+brew install --cask hackmajoris/apps/sharefly
 ```
 
-Install it on the mini and on each client. The binary lands in `$(brew --prefix)/bin/go-share`: `/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel. Upgrade with `brew upgrade --cask go-share`.
+Install it on the mini and on each client. The binary lands in `$(brew --prefix)/bin/sharefly`: `/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel. Upgrade with `brew upgrade --cask sharefly`.
 
 From source (Go 1.27.1+):
 
 ```
-go build -o go-share ./cmd/go-share
+go build -o sharefly ./cmd/sharefly
 ```
 
 ## Release
@@ -49,14 +49,14 @@ Push a `v*` tag. The release workflow runs GoReleaser, which publishes the GitHu
 ## Client usage
 
 ```
-go-share serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the public URL
-go-share ls [--server URL]                               # table: ID NAME EXPIRES URL
-go-share rm <id> [--server URL]                          # delete a share, prints nothing
-go-share renew <id> [--ttl 7d] [--server URL]            # reset expiry from now, prints the row
+sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the public URL
+sharefly ls [--server URL]                               # table: ID NAME EXPIRES URL
+sharefly rm <id> [--server URL]                          # delete a share, prints nothing
+sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now, prints the row
 ```
 
 - `--ttl`: `Nd` (days), `Nh` (hours), `Nm` (minutes), N a positive integer, or `never`. Default `7d`.
-- Server address: `--server` flag, else `GO_SHARE_SERVER` env, else `http://macmini:8787`. It must be a full URL with scheme (`http://host:8787`, not `host:8787`). The default relies on the MagicDNS name `macmini`.
+- Server address: `--server` flag, else `SHAREFLY_SERVER` env, else `http://macmini:8787`. It must be a full URL with scheme (`http://host:8787`, not `host:8787`). The default relies on the MagicDNS name `macmini`.
 - Flags may come before or after the positional argument.
 - A folder must contain `index.html` at its root; the URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
 - Expiry times print in local time.
@@ -65,7 +65,7 @@ go-share renew <id> [--ttl 7d] [--server URL]            # reset expiry from now
 ## Server
 
 ```
-go-share server --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com
+sharefly server --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com
 ```
 
 | Flag | Default | |
@@ -73,7 +73,7 @@ go-share server --api-addr <tailscale-ip>:8787 --public-url https://share.yourdo
 | `--api-addr` | (required) | management API listen address, use the tailnet IP |
 | `--public-url` | (required) | public base URL used to build share links |
 | `--public-addr` | `127.0.0.1:8080` | public file server listen address |
-| `--data-dir` | `~/go-share` | holds `shares/`, `tmp/`, `shares.json` |
+| `--data-dir` | `~/sharefly` | holds `shares/`, `tmp/`, `shares.json` |
 
 ## API
 
@@ -98,18 +98,18 @@ The archive may hold only regular files and directories with relative paths, at 
    brew install cloudflared
    sudo cloudflared service install <TOKEN>
    ```
-3. **Binary.** `brew install --cask hackmajoris/apps/go-share` (see above).
+3. **Binary.** `brew install --cask hackmajoris/apps/sharefly` (see above).
 4. **Data dir.** Create it as `YOUR_USER` (not with `sudo`) before loading the plist. launchd does not create the log file's parent directory, and the server, which runs as `YOUR_USER`, must be able to write it.
    ```
-   mkdir -p ~/go-share
+   mkdir -p ~/sharefly
    ```
-5. **Plist.** Edit `deploy/com.go-share.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/opt/homebrew/bin/go-share` (Intel: `/usr/local/bin/go-share`). After `brew upgrade --cask go-share`, restart with `sudo launchctl kickstart -k system/com.go-share.server`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/go-share/server.log`) or add a `newsyslog` rule.
+5. **Plist.** Edit `deploy/com.sharefly.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/opt/homebrew/bin/sharefly` (Intel: `/usr/local/bin/sharefly`). After `brew upgrade --cask sharefly`, restart with `sudo launchctl kickstart -k system/com.sharefly.server`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/sharefly/server.log`) or add a `newsyslog` rule.
    ```
-   sudo cp deploy/com.go-share.server.plist /Library/LaunchDaemons/
-   sudo chown root:wheel /Library/LaunchDaemons/com.go-share.server.plist
-   sudo launchctl bootstrap system /Library/LaunchDaemons/com.go-share.server.plist
+   sudo cp deploy/com.sharefly.server.plist /Library/LaunchDaemons/
+   sudo chown root:wheel /Library/LaunchDaemons/com.sharefly.server.plist
+   sudo launchctl bootstrap system /Library/LaunchDaemons/com.sharefly.server.plist
    ```
-   It runs as a LaunchDaemon so it starts at boot without a login, but it can only bind `--api-addr` once the tailnet IP exists. The Tailscale GUI app connects only after a user logs in, so until then launchd keeps retrying and the public listener is down too. For a true headless boot, run Tailscale as a system daemon (`brew install tailscale`, `sudo tailscaled install-system-daemon`, `tailscale up`) or enable auto-login. To reload after edits: `sudo launchctl bootout system/com.go-share.server`, then bootstrap again.
+   It runs as a LaunchDaemon so it starts at boot without a login, but it can only bind `--api-addr` once the tailnet IP exists. The Tailscale GUI app connects only after a user logs in, so until then launchd keeps retrying and the public listener is down too. For a true headless boot, run Tailscale as a system daemon (`brew install tailscale`, `sudo tailscaled install-system-daemon`, `tailscale up`) or enable auto-login. To reload after edits: `sudo launchctl bootout system/com.sharefly.server`, then bootstrap again.
 6. **No sleep.** System Settings → Energy → prevent automatic sleeping.
 
 ## Caveats

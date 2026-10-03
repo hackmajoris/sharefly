@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 const defaultTTL = "7d"

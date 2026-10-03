@@ -1,3 +1,3 @@
-module github.com/hackmajoris/go-share
+module github.com/hackmajoris/sharefly
 
 go 1.27.1

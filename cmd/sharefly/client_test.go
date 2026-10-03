@@ -6,15 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 func TestResolveServerPrecedence(t *testing.T) {
-	t.Setenv("GO_SHARE_SERVER", "")
+	t.Setenv("SHAREFLY_SERVER", "")
 	if got := resolveServer(""); got != defaultServer {
 		t.Errorf("no flag/env: got %q, want %q", got, defaultServer)
 	}
-	t.Setenv("GO_SHARE_SERVER", "http://env:1")
+	t.Setenv("SHAREFLY_SERVER", "http://env:1")
 	if got := resolveServer(""); got != "http://env:1" {
 		t.Errorf("env must be used when flag unset, got %q", got)
 	}

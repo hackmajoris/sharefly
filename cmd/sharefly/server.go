@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/server"
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/server"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 const (
@@ -37,7 +37,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	fs.StringVar(&cfg.apiAddr, "api-addr", "", "management API listen address (tailnet IP:port, required)")
 	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
-	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default ~/go-share)")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default ~/sharefly)")
 	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL, e.g. https://share.example.com (required)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -56,7 +56,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("no --data-dir and no home directory: %w", err)
 		}
-		cfg.dataDir = filepath.Join(home, "go-share")
+		cfg.dataDir = filepath.Join(home, "sharefly")
 	}
 	return cfg, nil
 }

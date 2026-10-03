@@ -4,9 +4,9 @@ release:
   name_template: Version {{ .Version }}
 
 builds:
-  - id: go-share
-    main: ./cmd/go-share
-    binary: go-share
+  - id: sharefly
+    main: ./cmd/sharefly
+    binary: sharefly
     env:
       - CGO_ENABLED=0
     goos:
@@ -19,27 +19,27 @@ builds:
       - -s -w
 
 archives:
-  - id: go-share
+  - id: sharefly
     ids:
-      - go-share
+      - sharefly
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
 homebrew_casks:
-  - name: go-share
+  - name: sharefly
     ids:
-      - go-share
+      - sharefly
     repository:
       owner: hackmajoris
       name: homebrew-apps
-    homepage: https://github.com/hackmajoris/go-share
+    homepage: https://github.com/hackmajoris/sharefly
     description: Share static HTML from your tailnet via a public URL through a Cloudflare Tunnel
     binaries:
-      - go-share
+      - sharefly
     # the release binaries are unsigned, so macOS quarantines what brew downloads
     hooks:
       post:
         install: |
           if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/go-share"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sharefly"]
           end

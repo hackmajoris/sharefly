@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-const usage = `usage: go-share <command> [flags]
+const usage = `usage: sharefly <command> [flags]
 
 commands:
   serve     share a file or folder: serve <path> [--ttl 7d] [--server URL]
@@ -46,7 +46,7 @@ func run(args []string) int {
 		return 0
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "go-share:", err)
+		fmt.Fprintln(os.Stderr, "sharefly:", err)
 		return 1
 	}
 	return 0

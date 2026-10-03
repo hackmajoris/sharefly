@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 type tarEntry struct {

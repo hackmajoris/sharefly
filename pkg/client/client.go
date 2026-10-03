@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 type Client struct {
@@ -95,7 +95,7 @@ func (c *Client) endpoint(path string) string {
 
 func (c *Client) handle(resp *http.Response, err error, want int, out any) error {
 	if err != nil {
-		return fmt.Errorf("can't reach go-share server at %s (tailscale up? server running?): %w", c.BaseURL, err)
+		return fmt.Errorf("can't reach sharefly server at %s (tailscale up? server running?): %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != want {

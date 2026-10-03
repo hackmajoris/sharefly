@@ -1,13 +1,13 @@
-# go-share
+# sharefly
 
 Standard library only. Plan history: `docs/plans/`.
 
 Commands:
-- build: `go build -o go-share ./cmd/go-share`
+- build: `go build -o sharefly ./cmd/sharefly`
 - test: `go test -race ./...`, `go vet ./...`, `gofmt -l .`
-- plist: `plutil -lint deploy/com.go-share.server.plist`
+- plist: `plutil -lint deploy/com.sharefly.server.plist`
 
-Layout: `cmd/go-share` (subcommands, server wiring), `pkg/share` (store, TTL, IDs, extract, sweep/reconcile), `pkg/server` (API and public file handlers), `pkg/client` (archive + API client), `deploy/` (launchd plist).
+Layout: `cmd/sharefly` (subcommands, server wiring), `pkg/share` (store, TTL, IDs, extract, sweep/reconcile), `pkg/server` (API and public file handlers), `pkg/client` (archive + API client), `deploy/` (launchd plist).
 
 Invariants (keep when changing code):
 - Delete a share's dir before its record (Sweep, API delete): a crash must leave a dangling record, never an orphaned public dir.
@@ -23,6 +23,6 @@ Invariants (keep when changing code):
 
 Contracts:
 - `server.API` owns the dir names (`SharesDir()`, `TmpDir()`) and assumes they exist; only `runServer` creates them.
-- `maxUploadBytes` in `cmd/go-share/server.go` must match the 100MB in README.
+- `maxUploadBytes` in `cmd/sharefly/server.go` must match the 100MB in README.
 - Client archive and server extract agree on format (regular-file entries, slash-separated relative paths); `TestArchiveRoundTripsThroughExtract` guards it.
 - Tests use `httptest` + `t.TempDir()`; safety tests name the guarantee they protect.

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/server"
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/server"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 func newTestServer(t *testing.T) (*Client, string) {

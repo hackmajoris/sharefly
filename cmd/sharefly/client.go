@@ -8,8 +8,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/client"
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/client"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 const defaultServer = "http://macmini:8787"
@@ -18,7 +18,7 @@ func resolveServer(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
-	if env := os.Getenv("GO_SHARE_SERVER"); env != "" {
+	if env := os.Getenv("SHAREFLY_SERVER"); env != "" {
 		return env
 	}
 	return defaultServer
@@ -26,7 +26,7 @@ func resolveServer(flagVal string) string {
 
 func parseClientArgs(name string, args []string, nargs int, ttl *string) (*client.Client, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	srv := fs.String("server", "", "server API URL (default $GO_SHARE_SERVER or "+defaultServer+")")
+	srv := fs.String("server", "", "server API URL (default $SHAREFLY_SERVER or "+defaultServer+")")
 	if ttl != nil {
 		fs.StringVar(ttl, "ttl", "7d", "time to live: Nd, Nh, Nm or never")
 	}

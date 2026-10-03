@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackmajoris/go-share/pkg/share"
+	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
 func TestParseServerFlagsRequired(t *testing.T) {
@@ -46,7 +46,7 @@ func TestParseServerFlagsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(home, "go-share"); cfg.dataDir != want {
+	if want := filepath.Join(home, "sharefly"); cfg.dataDir != want {
 		t.Errorf("dataDir = %q, want %q", cfg.dataDir, want)
 	}
 }
@@ -58,8 +58,8 @@ func TestParseServerFlagsNoHomeFailsLoud(t *testing.T) {
 	if _, err := parseServerFlags(base); err == nil {
 		t.Fatal("no HOME and no --data-dir: want error")
 	}
-	cfg, err := parseServerFlags(append(base, "--data-dir", "/srv/go-share"))
-	if err != nil || cfg.dataDir != "/srv/go-share" {
+	cfg, err := parseServerFlags(append(base, "--data-dir", "/srv/sharefly"))
+	if err != nil || cfg.dataDir != "/srv/sharefly" {
 		t.Fatalf("explicit --data-dir must work without HOME: %q, %v", cfg.dataDir, err)
 	}
 }
