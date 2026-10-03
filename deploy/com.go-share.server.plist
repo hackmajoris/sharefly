@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.go-share.server</string>
+	<key>UserName</key>
+	<string>YOUR_USER</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/go-share</string>
+		<string>server</string>
+		<string>--api-addr</string>
+		<string>TAILSCALE_IP:8787</string>
+		<string>--public-addr</string>
+		<string>127.0.0.1:8080</string>
+		<string>--data-dir</string>
+		<string>/Users/YOUR_USER/go-share</string>
+		<string>--public-url</string>
+		<string>https://share.yourdomain.com</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>StandardOutPath</key>
+	<string>/Users/YOUR_USER/go-share/server.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/YOUR_USER/go-share/server.log</string>
+</dict>
+</plist>
