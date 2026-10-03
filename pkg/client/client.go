@@ -24,6 +24,9 @@ type Client struct {
 }
 
 func (c *Client) Upload(path, ttl string) (Share, error) {
+	if _, err := validate(path); err != nil {
+		return Share{}, err
+	}
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {

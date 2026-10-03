@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,15 +89,32 @@ func TestClientUploadSingleFileURLPointsAtFile(t *testing.T) {
 	}
 }
 
-func TestClientUploadArchiveErrorWins(t *testing.T) {
-	c, dataDir := newTestServer(t)
+func TestClientUploadNoIndexFailsBeforeNetwork(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var conns atomic.Int32
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns.Add(1)
+			conn.Close()
+		}
+	}()
+	c := &Client{BaseURL: "http://" + ln.Addr().String()}
 	site := writeTree(t, map[string]string{"a.html": "a", "b.html": "b"})
-	_, err := c.Upload(site, "7d")
+	_, err = c.Upload(site, "7d")
 	if err == nil || !strings.Contains(err.Error(), "index.html") {
 		t.Fatalf("err = %v, want local index.html error rather than a server error", err)
 	}
-	if names, _ := os.ReadDir(filepath.Join(dataDir, "shares")); len(names) != 0 {
-		t.Fatalf("nothing should be shared: %v", names)
+	time.Sleep(50 * time.Millisecond)
+	if n := conns.Load(); n != 0 {
+		t.Fatalf("folder without index.html must fail before any network call, server saw %d connection(s)", n)
 	}
 }
 

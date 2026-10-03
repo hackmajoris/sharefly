@@ -10,20 +10,28 @@ import (
 	"path/filepath"
 )
 
-func Archive(path string, w io.Writer) (name string, err error) {
+func validate(path string) (fs.FileInfo, error) {
 	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.IsDir() {
+		idx, err := os.Lstat(filepath.Join(path, "index.html"))
+		if err != nil || !idx.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s: folder has no index.html", path)
+		}
+	} else if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: not a regular file or folder", path)
+	}
+	return fi, nil
+}
+
+func Archive(path string, w io.Writer) (name string, err error) {
+	fi, err := validate(path)
 	if err != nil {
 		return "", err
 	}
 	name = filepath.Base(filepath.Clean(path))
-	if fi.IsDir() {
-		idx, err := os.Lstat(filepath.Join(path, "index.html"))
-		if err != nil || !idx.Mode().IsRegular() {
-			return "", fmt.Errorf("%s: folder has no index.html", path)
-		}
-	} else if !fi.Mode().IsRegular() {
-		return "", fmt.Errorf("%s: not a regular file or folder", path)
-	}
 
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
