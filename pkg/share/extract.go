@@ -9,9 +9,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 var ErrTooLarge = errors.New("archive too large")
+
+var ErrPathConflict = errors.New("archive path conflicts with an earlier entry")
 
 const maxEntries = 10000
 
@@ -43,21 +46,28 @@ func Extract(r io.Reader, dst string, maxBytes int64) (size int64, err error) {
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return size, err
+				return size, conflict(hdr.Name, err)
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return size, err
+				return size, conflict(hdr.Name, err)
 			}
 			written, err := writeFile(target, tr, maxBytes-size)
 			size += written
 			if err != nil {
-				return size, err
+				return size, conflict(hdr.Name, err)
 			}
 		default:
 			return size, fmt.Errorf("unsupported entry %q: only regular files and directories allowed", hdr.Name)
 		}
 	}
+}
+
+func conflict(name string, err error) error {
+	if errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EISDIR) {
+		return fmt.Errorf("%w: %q", ErrPathConflict, name)
+	}
+	return err
 }
 
 func writeFile(path string, r io.Reader, remaining int64) (int64, error) {

@@ -81,7 +81,7 @@ The management API on `--api-addr` is plain HTTP + JSON. The CLI uses it; any ot
 
 Record: `{"id","name","entry","size","created_at","expires_at","url"}`. `entry` is the path opened by `url`, relative to the share (`""` = its `index.html`); `size` is uncompressed bytes; `expires_at: null` means never. Errors are `{"error":"..."}`.
 
-The archive may hold only regular files and directories with relative paths, at most 10000 entries.
+The archive may hold only regular files and directories with relative paths, at most 10000 entries, and no entry may conflict with an earlier one (a file `a` followed by `a/b`).
 
 ## One-time mini setup
 

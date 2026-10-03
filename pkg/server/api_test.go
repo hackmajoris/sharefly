@@ -173,6 +173,9 @@ func TestAPIUploadRejections(t *testing.T) {
 		{"fifo", "/shares", tarGz(t, tarEntry{hdr: tar.Header{Name: "pipe", Typeflag: tar.TypeFifo}}), http.StatusBadRequest},
 		{"symlink", "/shares", tarGz(t, tarEntry{hdr: tar.Header{Name: "link", Typeflag: tar.TypeSymlink, Linkname: "/etc/passwd"}}), http.StatusBadRequest},
 		{"not gzip", "/shares", bytes.NewBufferString("plain"), http.StatusBadRequest},
+		{"file then file inside it", "/shares", tarGz(t, regular("a", "x"), regular("a/b", "y")), http.StatusBadRequest},
+		{"file then dir of same name", "/shares", tarGz(t, regular("a", "x"), tarEntry{hdr: tar.Header{Name: "a/", Typeflag: tar.TypeDir, Mode: 0o755}}), http.StatusBadRequest},
+		{"dir then file of same name", "/shares", tarGz(t, tarEntry{hdr: tar.Header{Name: "a/", Typeflag: tar.TypeDir, Mode: 0o755}}, regular("a", "x")), http.StatusBadRequest},
 		{"multi file without index", "/shares", tarGz(t, regular("a.html", "a"), regular("b.html", "b")), http.StatusBadRequest},
 		{"uncompressed over cap", "/shares", tarGz(t, regular("index.html", big)), http.StatusRequestEntityTooLarge},
 	}
@@ -185,6 +188,9 @@ func TestAPIUploadRejections(t *testing.T) {
 			}
 			if e := decode[map[string]string](t, rec); e["error"] == "" {
 				t.Fatalf("missing error message: %s", rec.Body)
+			}
+			if strings.Contains(rec.Body.String(), a.DataDir) {
+				t.Fatalf("error leaks server path: %s", rec.Body)
 			}
 			if names := dirEntries(t, filepath.Join(a.DataDir, "shares")); len(names) != 0 {
 				t.Fatalf("shares/ not empty: %v", names)

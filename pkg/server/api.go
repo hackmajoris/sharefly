@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hackmajoris/go-share/pkg/share"
@@ -22,6 +23,8 @@ type API struct {
 	DataDir   string
 	PublicURL string
 	MaxBytes  int64
+
+	publishMu sync.Mutex
 }
 
 func (a *API) Handler() http.Handler {
@@ -87,18 +90,26 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		exp := now.Add(d)
 		sh.ExpiresAt = &exp
 	}
-	if err := a.Store.Add(sh); err != nil {
-		internalError(w, err)
-		return
-	}
-	if err := os.Rename(tmp, filepath.Join(a.SharesDir(), id)); err != nil {
-		if derr := a.Store.Delete(id); derr != nil {
-			log.Printf("drop record %s: %v", id, derr)
-		}
+	if err := a.publish(sh, tmp); err != nil {
 		internalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, a.response(sh))
+}
+
+func (a *API) publish(sh share.Share, tmp string) error {
+	a.publishMu.Lock()
+	defer a.publishMu.Unlock()
+	if err := a.Store.Add(sh); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(a.SharesDir(), sh.ID)); err != nil {
+		if derr := a.Store.Delete(sh.ID); derr != nil {
+			log.Printf("drop record %s: %v", sh.ID, derr)
+		}
+		return err
+	}
+	return nil
 }
 
 func (a *API) list(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +123,8 @@ func (a *API) list(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	a.publishMu.Lock()
+	defer a.publishMu.Unlock()
 	if _, err := a.Store.Get(id); err != nil {
 		writeStoreError(w, err)
 		return

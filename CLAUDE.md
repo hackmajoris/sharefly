@@ -18,7 +18,8 @@ Invariants (keep when changing code):
 - Extraction writes only regular files/dirs, requests modes 0644/0755 (ignores tar header modes), and caps uncompressed bytes (100MB, while reading) and entry count.
 - The client validates TTL and path (folder has `index.html`) before opening any connection.
 - The server binds both listeners before Reconcile/Sweep, so a second instance never touches live data. A Reconcile error aborts startup (orphans would otherwise stay public).
-- Upload saves the record before renaming the dir into `shares/`, so nothing is public without a record.
+- Upload saves the record before renaming the dir into `shares/`, so nothing is public without a record. Add+Rename and the delete handler share `API.publishMu`, so a delete can't drop the record in between.
+- Extract returns `ErrPathConflict` (400) for archive file/dir conflicts; other `*fs.PathError`s are server faults (500).
 
 Contracts:
 - `server.API` owns the dir names (`SharesDir()`, `TmpDir()`) and assumes they exist; only `runServer` creates them.
