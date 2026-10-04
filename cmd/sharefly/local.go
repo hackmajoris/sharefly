@@ -25,6 +25,8 @@ const (
 	pollInterval   = 100 * time.Millisecond
 )
 
+var errNotRunning = errors.New("no local sharefly server running")
+
 // ensureLocalServer starts a background server when the client targets this machine and nothing answers.
 // A remote server can't be started from here, so its connection errors are left to the caller.
 func ensureLocalServer(c *client.Client, spawn func(apiAddr string) error, wait time.Duration) error {
@@ -119,13 +121,28 @@ func runStop(args []string) error {
 		}
 		*dataDir = dir
 	}
-	return stopServer(filepath.Join(*dataDir, pidFileName), shutdownTimeout+time.Second)
+	err := stopServer(filepath.Join(*dataDir, pidFileName), shutdownTimeout+time.Second)
+	if !errors.Is(err, errNotRunning) {
+		return err
+	}
+	base := resolveServer("")
+	addr, ok := localAPIAddr(base)
+	if !ok {
+		return err
+	}
+	if _, listErr := (&client.Client{BaseURL: base}).List(); listErr != nil {
+		return err
+	}
+	_, port, _ := net.SplitHostPort(addr)
+	return fmt.Errorf("a sharefly server is answering on %s but has no pid file in %s "+
+		"(started by an older version or with another --data-dir); stop it with: kill $(lsof -tiTCP:%s -sTCP:LISTEN)",
+		addr, *dataDir, port)
 }
 
 func stopServer(pidFile string, wait time.Duration) error {
 	data, err := os.ReadFile(pidFile)
 	if errors.Is(err, os.ErrNotExist) {
-		return errors.New("no local sharefly server running")
+		return errNotRunning
 	}
 	if err != nil {
 		return err
@@ -137,7 +154,7 @@ func stopServer(pidFile string, wait time.Duration) error {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
 			_ = os.Remove(pidFile)
-			return errors.New("no local sharefly server running (removed stale pid file)")
+			return fmt.Errorf("%w (removed stale pid file)", errNotRunning)
 		}
 		return err
 	}

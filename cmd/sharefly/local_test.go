@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -91,6 +92,31 @@ func TestEnsureLocalServerFailsWhenSpawnedServerNeverAnswers(t *testing.T) {
 	err := ensureLocalServer(&client.Client{BaseURL: "http://" + addr}, func(string) error { return nil }, 300*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "did not come up") {
 		t.Fatalf("err = %v, want did not come up", err)
+	}
+}
+
+// A server whose pid file is gone (older build, other data dir, deleted by hand) must not be reported as
+// "not running" while it still answers; that left an unstoppable server serving stale shares.
+func TestRunStopReportsServerWithoutPidFile(t *testing.T) {
+	addr := freeAddr(t)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	t.Setenv("SHAREFLY_SERVER", "http://"+addr)
+	err = runStop([]string{"--data-dir", t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "no pid file") || !strings.Contains(err.Error(), "kill") {
+		t.Fatalf("err = %v, want a pointer to the running server and how to stop it", err)
+	}
+}
+
+func TestRunStopNothingRunning(t *testing.T) {
+	t.Setenv("SHAREFLY_SERVER", "http://"+freeAddr(t))
+	if err := runStop([]string{"--data-dir", t.TempDir()}); !errors.Is(err, errNotRunning) {
+		t.Fatalf("err = %v, want errNotRunning", err)
 	}
 }
 
