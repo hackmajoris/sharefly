@@ -102,6 +102,8 @@ Pick one machine to host the shares (it needs the Cloudflare Tunnel from the pre
 
 The server runs until you stop it, the host sleeps or it reboots. After that, run the `sharefly start` command from step 1 again. Shares on disk are kept and served again as soon as it starts.
 
+To have it start at boot and restart after a crash, run it under your system's service manager, e.g. a launchd LaunchDaemon on macOS or a systemd unit on Linux. Point the service at `sharefly server` (the foreground mode) with the same flags, e.g. `sharefly server --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com`, not at `sharefly start`, which exits after launching the server.
+
 ### Start and stop the server yourself
 
 ```
