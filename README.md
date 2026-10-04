@@ -72,6 +72,23 @@ sharefly stop [--data-dir DIR]                           # stop the local server
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.
 
+## Environment
+
+| Variable | Used by | Default | |
+|---|---|---|---|
+| `SHAREFLY_SERVER` | `serve`, `ls`, `rm`, `renew`, `stop` | `http://127.0.0.1:8787` | server API URL; `--server` overrides it |
+| `SHAREFLY_PUBLIC_URL` | `start` (including the auto-started server) | `http://<public-addr>` | base URL for share links; `--public-url` overrides it |
+| `XDG_STATE_HOME` | `start`, `stop`, auto-start | `~/.local/state` | data lives in `$XDG_STATE_HOME/sharefly`; `--data-dir` overrides it |
+
+Put them in your shell profile, e.g.:
+
+```
+export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com   # links go through your Cloudflare Tunnel
+export SHAREFLY_SERVER=http://macmini:8787                # only when using a remote home server
+```
+
+The auto-started server reads `SHAREFLY_PUBLIC_URL` when it starts, so run `sharefly stop` after changing it.
+
 ## Server
 
 ```
