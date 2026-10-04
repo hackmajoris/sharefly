@@ -5,9 +5,8 @@ Standard library only. Plan history: `docs/plans/`.
 Commands:
 - build: `go build -o sharefly ./cmd/sharefly`
 - test: `go test -race ./...`, `go vet ./...`, `gofmt -l .`
-- plist: `plutil -lint deploy/com.sharefly.server.plist`
 
-Layout: `cmd/sharefly` (subcommands, server wiring), `pkg/share` (store, TTL, IDs, extract, sweep/reconcile), `pkg/server` (API and public file handlers), `pkg/client` (archive + API client), `deploy/` (launchd plist).
+Layout: `cmd/sharefly` (subcommands, server wiring), `pkg/share` (store, TTL, IDs, extract, sweep/reconcile), `pkg/server` (API and public file handlers), `pkg/client` (archive + API client).
 
 Invariants (keep when changing code):
 - Delete a share's dir before its record (Sweep, API delete): a crash must leave a dangling record, never an orphaned public dir.
@@ -24,5 +23,8 @@ Invariants (keep when changing code):
 Contracts:
 - `server.API` owns the dir names (`SharesDir()`, `TmpDir()`) and assumes they exist; only `runServer` creates them.
 - `maxUploadBytes` in `cmd/sharefly/server.go` must match the 100MB in README.
+- `serve` auto-starts a server only when the target is this machine (`ownServerAddr`: loopback or the configured `api-addr`); never for remote ones. The auto-started server reads the config file like any other. `start` writes `<data-dir>/server.pid` after binding and removes it on exit; `stop` relies on it.
+- Settings resolve flag > `~/.config/sharefly/config.json` > default; keys and defaults live in one table (`configKeys` in `cmd/sharefly/config.go`). There are no `SHAREFLY_*` env vars. The server writes `server.args.json` next to the pid file; setting a server-side key restarts a running local server with those args, except `public-url`, which the server re-reads live when the config file's mtime changes (`livePublicURL`).
 - Client archive and server extract agree on format (regular-file entries, slash-separated relative paths); `TestArchiveRoundTripsThroughExtract` guards it.
 - Tests use `httptest` + `t.TempDir()`; safety tests name the guarantee they protect.
+- With `tunnel` set, `runServer` supervises a `cloudflared` child (`cmd/sharefly/tunnel.go`): token only via `TUNNEL_TOKEN` env, restart with backoff, SIGTERM on shutdown and wait for it to exit. Quick-tunnel URL is parsed from its output and wins over config `public-url` (an explicit `--public-url` wins over both). Secret keys (`tunnel-token`) have no flag and are masked in `sharefly config`; the config file is written 0600.

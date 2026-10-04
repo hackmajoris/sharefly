@@ -30,15 +30,23 @@ var errNotRunning = errors.New("no local sharefly server running")
 
 // ensureLocalServer starts a background server when the client targets this machine and nothing answers.
 // A remote server can't be started from here, so its connection errors are left to the caller.
-func ensureLocalServer(c *client.Client, spawn func(apiAddr string) error, wait time.Duration) error {
+// A non-empty tunnel is the mode the server must run; a running server in another mode is an error, not restarted.
+func ensureLocalServer(c *client.Client, tunnel string, spawn func(apiAddr, tunnel string) error, wait time.Duration) error {
 	addr, ok := ownServerAddr(c.BaseURL)
 	if !ok {
+		if tunnel != "" {
+			return fmt.Errorf("--tunnel only applies to a server on this machine, not %s", c.BaseURL)
+		}
 		return nil
 	}
 	if _, err := c.List(); !errors.Is(err, client.ErrUnreachable) {
+		if running := runningTunnel(); tunnel != "" && running != tunnel {
+			return fmt.Errorf("a local server is already running with tunnel %s; run `sharefly stop` first, or `sharefly config set tunnel %s`",
+				or(running, "unknown"), tunnel)
+		}
 		return nil
 	}
-	if err := spawn(addr); err != nil {
+	if err := spawn(addr, tunnel); err != nil {
 		return fmt.Errorf("start local server: %w", err)
 	}
 	return waitReady(c, wait, logPath())
@@ -147,12 +155,33 @@ func logPath() string {
 	return filepath.Join(dir, logFileName)
 }
 
-func spawnLocalServer(apiAddr string) error {
+// runningTunnel is the tunnel mode of the local server, from the args it recorded and the config; "" if unknown.
+func runningTunnel() string {
+	dir, err := configuredDataDir()
+	if err != nil {
+		return ""
+	}
+	args, err := readServerArgs(dir)
+	if err != nil {
+		return ""
+	}
+	cfg, err := parseServerFlags(args)
+	if err != nil {
+		return ""
+	}
+	return cfg.tunnel
+}
+
+func spawnLocalServer(apiAddr, tunnel string) error {
 	dir, err := configuredDataDir()
 	if err != nil {
 		return err
 	}
-	pid, logFile, err := spawnServer([]string{"--api-addr", apiAddr}, dir)
+	args := []string{"--api-addr", apiAddr}
+	if tunnel != "" {
+		args = append(args, "--tunnel", tunnel)
+	}
+	pid, logFile, err := spawnServer(args, dir)
 	if err != nil {
 		return err
 	}

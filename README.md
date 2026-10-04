@@ -67,13 +67,15 @@ open "$(sharefly serve report.html)"         # open it in your browser
 
 ### Make links public, instantly (quick tunnel)
 
-No domain or Cloudflare account needed. sharefly runs `cloudflared` for you and uses the random address it gets.
+No domain or Cloudflare account needed. sharefly runs `cloudflared` for you and uses the random address it gets, even if `public-url` is set in the config (only an explicit `--public-url` overrides it).
 
 ```
 brew install cloudflared
 sharefly config set tunnel quick
 sharefly serve report.html     # → https://<random-words>.trycloudflare.com/<id>/report.html
 ```
+
+For one run without changing the config: `sharefly serve report.html --tunnel quick`. The flag only applies when `serve` starts the server; if one is already running in another mode, `serve` refuses and tells you to `sharefly stop` first. The server keeps the tunnel until `sharefly stop`, so a later plain `serve` still gets a public link.
 
 The address changes every time the server starts, so old links stop working after `sharefly stop`. Use your own domain for links that last.
 
@@ -142,19 +144,20 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 ### Commands
 
 ```
-sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the URL
-sharefly ls [--server URL]                               # table: ID NAME EXPIRES URL
-sharefly rm <id> [--server URL]                          # delete a share, prints nothing
-sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now, prints the row
-sharefly start [flags]                                   # start the server in the background
-sharefly server [flags]                                  # run the server in the foreground
-sharefly stop [--data-dir DIR]                           # stop the local server
-sharefly config                                          # show settings and where they come from
-sharefly config set <key> <value>                        # save a setting
-sharefly config unset <key>                              # remove a setting
-sharefly config open                                     # edit the config file in your editor
+sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M]   # upload, print only the URL
+sharefly ls [--server URL]                                            # table: ID NAME EXPIRES URL
+sharefly rm <id> [--server URL]                                       # delete a share, prints nothing
+sharefly renew <id> [--ttl 7d] [--server URL]                         # reset expiry from now, prints the row
+sharefly start [flags]                                                # start the server in the background
+sharefly server [flags]                                               # run the server in the foreground
+sharefly stop [--data-dir DIR]                                        # stop the local server
+sharefly config                                                       # show settings and where they come from
+sharefly config set <key> <value>                                     # save a setting
+sharefly config unset <key>                                           # remove a setting
+sharefly config open                                                  # edit the config file in your editor
 ```
 
+- `--tunnel` (serve): tunnel for the server `serve` starts (`off`, `quick`, `token`). Error if a server already runs in another mode, or if `--server` is another machine.
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
 - A folder's URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.

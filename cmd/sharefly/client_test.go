@@ -38,23 +38,23 @@ func TestResolveServerPrecedence(t *testing.T) {
 func TestParseClientArgsTTLFromConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	var ttl string
-	if _, _, err := parseClientArgs("serve", []string{"x"}, 1, &ttl); err != nil || ttl != defaultTTL {
+	if _, _, err := parseClientArgs("serve", []string{"x"}, 1, &ttl, nil); err != nil || ttl != defaultTTL {
 		t.Fatalf("ttl = %q, %v; want %s", ttl, err, defaultTTL)
 	}
 	if err := saveConfig(config{TTL: "1h"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := parseClientArgs("serve", []string{"x"}, 1, &ttl); err != nil || ttl != "1h" {
+	if _, _, err := parseClientArgs("serve", []string{"x"}, 1, &ttl, nil); err != nil || ttl != "1h" {
 		t.Fatalf("ttl = %q, %v; want the configured 1h", ttl, err)
 	}
-	if _, _, err := parseClientArgs("serve", []string{"x", "--ttl", "never"}, 1, &ttl); err != nil || ttl != "never" {
+	if _, _, err := parseClientArgs("serve", []string{"x", "--ttl", "never"}, 1, &ttl, nil); err != nil || ttl != "never" {
 		t.Fatalf("ttl = %q, %v; flag must override config", ttl, err)
 	}
 }
 
 func TestParseClientArgsFlagsAfterPath(t *testing.T) {
 	var ttl string
-	c, pos, err := parseClientArgs("serve", []string{"report.html", "--ttl", "1h", "--server", "http://s:1"}, 1, &ttl)
+	c, pos, err := parseClientArgs("serve", []string{"report.html", "--ttl", "1h", "--server", "http://s:1"}, 1, &ttl, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,13 +65,13 @@ func TestParseClientArgsFlagsAfterPath(t *testing.T) {
 
 func TestParseClientArgsDefaultsAndArity(t *testing.T) {
 	var ttl string
-	if _, _, err := parseClientArgs("serve", []string{"x.html"}, 1, &ttl); err != nil || ttl != "7d" {
+	if _, _, err := parseClientArgs("serve", []string{"x.html"}, 1, &ttl, nil); err != nil || ttl != "7d" {
 		t.Fatalf("default ttl = %q, %v; want 7d", ttl, err)
 	}
-	if _, _, err := parseClientArgs("rm", nil, 1, nil); err == nil {
+	if _, _, err := parseClientArgs("rm", nil, 1, nil, nil); err == nil {
 		t.Error("rm without id must error instead of sending a request")
 	}
-	if _, _, err := parseClientArgs("ls", []string{"stray"}, 0, nil); err == nil {
+	if _, _, err := parseClientArgs("ls", []string{"stray"}, 0, nil, nil); err == nil {
 		t.Error("ls with extra args must error")
 	}
 }
@@ -101,5 +101,17 @@ func TestPrintShares(t *testing.T) {
 				t.Errorf("line %d %q missing %q", i, lines[i], field)
 			}
 		}
+	}
+}
+
+// The user's exact form `serve <path> --tunnel quick` must parse, and a typo must fail before any connection.
+func TestParseClientArgsTunnel(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var ttl, tunnel string
+	if _, pos, err := parseClientArgs("serve", []string{"tmp", "--tunnel", "quick"}, 1, &ttl, &tunnel); err != nil || tunnel != tunnelQuick || pos[0] != "tmp" {
+		t.Fatalf("pos=%v tunnel=%q err=%v", pos, tunnel, err)
+	}
+	if _, _, err := parseClientArgs("serve", []string{"tmp", "--tunnel", "quik"}, 1, &ttl, &tunnel); err == nil {
+		t.Fatal("unknown tunnel mode must be rejected")
 	}
 }

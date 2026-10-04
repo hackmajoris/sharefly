@@ -10,7 +10,7 @@ import (
 const usage = `usage: sharefly <command> [flags]
 
 commands:
-  serve     share a file or folder: serve <path> [--ttl 7d] [--server URL]
+  serve     share a file or folder: serve <path> [--ttl 7d] [--server URL] [--tunnel quick]
   ls        list shares
   rm        delete a share: rm <id>
   renew     extend a share: renew <id> [--ttl 7d]

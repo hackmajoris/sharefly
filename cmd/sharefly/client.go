@@ -22,11 +22,14 @@ func resolveServer(flagVal string) (string, error) {
 	return c.resolve(flagVal, serverKey)
 }
 
-func parseClientArgs(name string, args []string, nargs int, ttl *string) (*client.Client, []string, error) {
+func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string) (*client.Client, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	srv := fs.String("server", "", "server API URL (default: config `server`, else http://<api-addr>)")
 	if ttl != nil {
 		fs.StringVar(ttl, "ttl", "", "time to live: Nd, Nh, Nm or never (default: config `ttl`, else "+defaultTTL+")")
+	}
+	if tunnel != nil {
+		fs.StringVar(tunnel, "tunnel", "", "tunnel for the server serve starts: off, quick or token (default: config `tunnel`)")
 	}
 	var pos []string
 	for {
@@ -41,6 +44,11 @@ func parseClientArgs(name string, args []string, nargs int, ttl *string) (*clien
 	}
 	if len(pos) != nargs {
 		return nil, nil, fmt.Errorf("%s: expected %d argument(s), got %d", name, nargs, len(pos))
+	}
+	if tunnel != nil && *tunnel != "" {
+		if err := validateTunnel(*tunnel); err != nil {
+			return nil, nil, err
+		}
 	}
 	cfg, err := loadConfig()
 	if err != nil {
@@ -59,12 +67,12 @@ func parseClientArgs(name string, args []string, nargs int, ttl *string) (*clien
 }
 
 func runServe(args []string) error {
-	var ttl string
-	c, pos, err := parseClientArgs("serve", args, 1, &ttl)
+	var ttl, tunnel string
+	c, pos, err := parseClientArgs("serve", args, 1, &ttl, &tunnel)
 	if err != nil {
 		return err
 	}
-	if err := ensureLocalServer(c, spawnLocalServer, startWait); err != nil {
+	if err := ensureLocalServer(c, tunnel, spawnLocalServer, startWait); err != nil {
 		return err
 	}
 	sh, skipped, err := c.Upload(pos[0], ttl)
@@ -79,7 +87,7 @@ func runServe(args []string) error {
 }
 
 func runList(args []string) error {
-	c, _, err := parseClientArgs("ls", args, 0, nil)
+	c, _, err := parseClientArgs("ls", args, 0, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -104,7 +112,7 @@ func printShares(w io.Writer, shares []share.Link) error {
 }
 
 func runRm(args []string) error {
-	c, pos, err := parseClientArgs("rm", args, 1, nil)
+	c, pos, err := parseClientArgs("rm", args, 1, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -113,7 +121,7 @@ func runRm(args []string) error {
 
 func runRenew(args []string) error {
 	var ttl string
-	c, pos, err := parseClientArgs("renew", args, 1, &ttl)
+	c, pos, err := parseClientArgs("renew", args, 1, &ttl, nil)
 	if err != nil {
 		return err
 	}
