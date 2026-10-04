@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ func resolveServer(flagVal string) (string, error) {
 	return c.resolve(flagVal, serverKey)
 }
 
-func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string) (*client.Client, []string, error) {
+func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string, all *bool) (*client.Client, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	srv := fs.String("server", "", "server API URL (default: config `server`, else http://<api-addr>)")
 	if ttl != nil {
@@ -30,6 +31,9 @@ func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string)
 	}
 	if tunnel != nil {
 		fs.StringVar(tunnel, "tunnel", "", "tunnel for the server serve starts: off, quick or token (default: config `tunnel`)")
+	}
+	if all != nil {
+		fs.BoolVar(all, "all", false, "delete every share instead of one <id>")
 	}
 	var pos []string
 	for {
@@ -41,6 +45,9 @@ func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string)
 		}
 		pos = append(pos, fs.Arg(0))
 		args = fs.Args()[1:]
+	}
+	if all != nil && *all {
+		nargs = 0
 	}
 	if len(pos) != nargs {
 		return nil, nil, fmt.Errorf("%s: expected %d argument(s), got %d", name, nargs, len(pos))
@@ -68,7 +75,7 @@ func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string)
 
 func runServe(args []string) error {
 	var ttl, tunnel string
-	c, pos, err := parseClientArgs("serve", args, 1, &ttl, &tunnel)
+	c, pos, err := parseClientArgs("serve", args, 1, &ttl, &tunnel, nil)
 	if err != nil {
 		return err
 	}
@@ -87,7 +94,7 @@ func runServe(args []string) error {
 }
 
 func runList(args []string) error {
-	c, _, err := parseClientArgs("ls", args, 0, nil, nil)
+	c, _, err := parseClientArgs("ls", args, 0, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -112,16 +119,30 @@ func printShares(w io.Writer, shares []share.Link) error {
 }
 
 func runRm(args []string) error {
-	c, pos, err := parseClientArgs("rm", args, 1, nil, nil)
+	var all bool
+	c, pos, err := parseClientArgs("rm", args, 1, nil, nil, &all)
 	if err != nil {
 		return err
 	}
-	return c.Delete(pos[0])
+	if !all {
+		return c.Delete(pos[0])
+	}
+	shares, err := c.List()
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, sh := range shares {
+		if err := c.Delete(sh.ID); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", sh.ID, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func runRenew(args []string) error {
 	var ttl string
-	c, pos, err := parseClientArgs("renew", args, 1, &ttl, nil)
+	c, pos, err := parseClientArgs("renew", args, 1, &ttl, nil, nil)
 	if err != nil {
 		return err
 	}

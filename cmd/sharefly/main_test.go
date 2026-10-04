@@ -94,3 +94,48 @@ func TestRunServePrintsOnlyURLAndRmIsSilent(t *testing.T) {
 		t.Fatalf("ls output = %q, want table header", out)
 	}
 }
+
+// `rm --all` must leave nothing public, and must not be combinable with an id (ambiguous intent).
+func TestRunRmAllDeletesEveryShare(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"shares", "tmp"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := share.Open(filepath.Join(dir, "shares.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &server.API{Store: store, DataDir: dir, PublicURL: "https://share.example.com", MaxBytes: 1 << 20}
+	ts := httptest.NewServer(api.Handler())
+	t.Cleanup(ts.Close)
+	f := filepath.Join(t.TempDir(), "report.html")
+	if err := os.WriteFile(f, []byte("r"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if code, _ := captureStdout(t, func() int { return run([]string{"serve", f, "--server", ts.URL}) }); code != 0 {
+			t.Fatalf("serve: code %d", code)
+		}
+	}
+
+	if code := run([]string{"rm", store.List()[0].ID, "--all", "--server", ts.URL}); code != 1 {
+		t.Fatalf("rm <id> --all: code %d, want 1", code)
+	}
+	if n := len(store.List()); n != 3 {
+		t.Fatalf("rm <id> --all deleted shares: %d left, want 3", n)
+	}
+
+	code, out := captureStdout(t, func() int { return run([]string{"rm", "--all", "--server", ts.URL}) })
+	if code != 0 || out != "" {
+		t.Fatalf("rm --all: code %d, stdout %q; want 0 and no output", code, out)
+	}
+	if shares := store.List(); len(shares) != 0 {
+		t.Fatalf("rm --all left %v", shares)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "shares"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("rm --all left public dirs %v, %v", entries, err)
+	}
+}

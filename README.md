@@ -147,6 +147,7 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M]   # upload, print only the URL
 sharefly ls [--server URL]                                            # table: ID NAME EXPIRES URL
 sharefly rm <id> [--server URL]                                       # delete a share, prints nothing
+sharefly rm --all [--server URL]                                      # delete every share, prints nothing
 sharefly renew <id> [--ttl 7d] [--server URL]                         # reset expiry from now, prints the row
 sharefly start [flags]                                                # start the server in the background
 sharefly server [flags]                                               # run the server in the foreground
