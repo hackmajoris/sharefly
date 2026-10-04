@@ -139,6 +139,7 @@ sharefly stop [--data-dir DIR]                           # stop the local server
 sharefly config                                          # show settings and where they come from
 sharefly config set <key> <value>                        # save a setting
 sharefly config unset <key>                              # remove a setting
+sharefly config open                                     # edit the config file in your editor
 ```
 
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
@@ -161,6 +162,7 @@ Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/co
 | `public-addr` | `127.0.0.1:8080` | server | file server listen address (what cloudflared points at) |
 | `ttl` | `7d` | `serve` | default link lifetime |
 
+- `sharefly config open` opens the file in `$VISUAL` or `$EDITOR` (e.g. `EDITOR="code --wait"`), or the system's default app if neither is set. In the file, keys use underscores (`public_url`). After a terminal editor exits, the file is checked and a running local server restarts if a server key changed. Unknown keys and invalid values are rejected by every command.
 - Every key has a matching flag (`--public-url`, `--server`, `--data-dir`, `--api-addr`, `--public-addr`, `--ttl`) that overrides the config file for one command.
 - Setting a server key (`public-url`, `data-dir`, `api-addr`, `public-addr`) restarts a running local server with the flags it was started with, so the change applies at once. Changing `data-dir` doesn't move existing shares; the command prints where they are.
 

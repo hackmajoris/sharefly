@@ -207,3 +207,86 @@ func TestRestartServerRelaunchesWithSameFlags(t *testing.T) {
 		t.Errorf("relaunched with %v, want %v", gotArgs, args)
 	}
 }
+
+// fakeEditor returns an "editor" that overwrites the file it is given with content.
+func fakeEditor(t *testing.T, content string) []string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "content.json"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "editor.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ncp \""+filepath.Join(dir, "content.json")+"\" \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return []string{script}
+}
+
+// Editing a server-side key by hand must reach the running server, same as `config set`.
+func TestOpenConfigRestartsAfterServerSideEdit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	restarts := 0
+	restart := func(string) error { restarts++; return nil }
+	if err := openConfig(fakeEditor(t, `{"public_url": "https://share.example.com"}`), restart); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := loadConfig(); c.PublicURL != "https://share.example.com" {
+		t.Errorf("config after edit = %+v", c)
+	}
+	if restarts != 1 {
+		t.Errorf("restarts = %d, want 1 after changing public_url", restarts)
+	}
+}
+
+func TestOpenConfigNoRestartForClientOnlyEdit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	restart := func(string) error { t.Fatal("ttl is client-only; must not restart the server"); return nil }
+	if err := openConfig(fakeEditor(t, `{"ttl": "1h"}`), restart); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A typo or invalid value saved in the editor must be reported right away, not on the next share.
+func TestOpenConfigReportsInvalidEdit(t *testing.T) {
+	for name, content := range map[string]string{
+		"syntax":      `{"public_url": `,
+		"unknown key": `{"public-url": "https://share.example.com"}`,
+		"bad value":   `{"api_addr": "8787"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			restart := func(string) error { t.Fatal("must not restart with a broken config"); return nil }
+			if err := openConfig(fakeEditor(t, content), restart); err == nil {
+				t.Fatal("want error for invalid config")
+			}
+		})
+	}
+}
+
+func TestOpenConfigCreatesMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	editor := []string{"true"}
+	if err := openConfig(editor, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sharefly", "config.json")); err != nil {
+		t.Errorf("config file not created before opening the editor: %v", err)
+	}
+}
+
+func TestEditorCommandPrefersVisual(t *testing.T) {
+	t.Setenv("VISUAL", "code --wait")
+	t.Setenv("EDITOR", "vi")
+	if got := editorCommand(); strings.Join(got, " ") != "code --wait" {
+		t.Errorf("editorCommand() = %v, want VISUAL split into words", got)
+	}
+	t.Setenv("VISUAL", "")
+	if got := editorCommand(); strings.Join(got, " ") != "vi" {
+		t.Errorf("editorCommand() = %v, want EDITOR", got)
+	}
+	t.Setenv("EDITOR", "")
+	if got := editorCommand(); got != nil {
+		t.Errorf("editorCommand() = %v, want nil so the GUI fallback is used", got)
+	}
+}

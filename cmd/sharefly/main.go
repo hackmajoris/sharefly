@@ -17,7 +17,7 @@ commands:
   start     start the share server in the background (serve does this automatically)
   server    run the share server in the foreground
   stop      stop the local share server
-  config    show or change settings: config [set <key> <value> | unset <key>]
+  config    show or change settings: config [set <key> <value> | unset <key> | open]
 `
 
 func main() {

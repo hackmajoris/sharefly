@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,7 +9,9 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -121,8 +124,17 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return c, err
 	}
-	if err := json.Unmarshal(data, &c); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
 		return c, fmt.Errorf("bad config file %s: %w", path, err)
+	}
+	for _, k := range configKeys {
+		if v := *k.field(&c); v != "" {
+			if err := k.validate(v); err != nil {
+				return c, fmt.Errorf("bad config file %s: %s: %w", path, k.name, err)
+			}
+		}
 	}
 	return c, nil
 }
@@ -181,9 +193,75 @@ func runConfig(args []string) error {
 		return setConfig(args[1], args[2], restartLocalServer)
 	case args[0] == "unset" && len(args) == 2:
 		return setConfig(args[1], "", restartLocalServer)
+	case args[0] == "open" && len(args) == 1:
+		return openConfig(editorCommand(), restartLocalServer)
 	default:
-		return errors.New("usage: sharefly config [set <key> <value> | unset <key>]")
+		return errors.New("usage: sharefly config [set <key> <value> | unset <key> | open]")
 	}
+}
+
+// editorCommand returns $VISUAL or $EDITOR split into words, or nil when neither is set.
+func editorCommand() []string {
+	for _, env := range []string{"VISUAL", "EDITOR"} {
+		if words := strings.Fields(os.Getenv(env)); len(words) > 0 {
+			return words
+		}
+	}
+	return nil
+}
+
+// openConfig opens the config file in the user's editor. A terminal editor blocks, so afterwards the file is
+// validated and a running server restarted if a server-side key changed; the GUI fallback returns immediately.
+func openConfig(editor []string, restart func(oldDataDir string) error) error {
+	path, err := configPath()
+	if err != nil {
+		return err
+	}
+	before, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := saveConfig(before); err != nil {
+			return err
+		}
+	}
+	names := make([]string, len(configKeys))
+	for i, k := range configKeys {
+		names[i] = strings.ReplaceAll(k.name, "-", "_")
+	}
+	fmt.Fprintf(os.Stderr, "keys: %s\n", strings.Join(names, ", "))
+	if editor == nil {
+		opener := "xdg-open"
+		args := []string{path}
+		if runtime.GOOS == "darwin" {
+			opener, args = "open", []string{"-t", path}
+		}
+		if err := exec.Command(opener, args...).Run(); err != nil {
+			return fmt.Errorf("open %s: %w (set $EDITOR to use a terminal editor)", path, err)
+		}
+		fmt.Fprintln(os.Stderr, "after saving, run `sharefly config` to check it; restart the server with `sharefly stop` and `sharefly start`")
+		return nil
+	}
+	cmd := exec.Command(editor[0], append(editor[1:], path)...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("editor: %w", err)
+	}
+	after, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	oldDataDir, _, err := before.value(dataDirKey)
+	if err != nil {
+		return err
+	}
+	for _, k := range configKeys {
+		if k.serverSide && *k.field(&before) != *k.field(&after) {
+			return restart(oldDataDir)
+		}
+	}
+	return nil
 }
 
 func showConfig(w io.Writer) error {
