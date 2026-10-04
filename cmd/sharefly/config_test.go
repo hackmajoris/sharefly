@@ -65,21 +65,24 @@ func TestLoadConfigCorruptFileFails(t *testing.T) {
 
 func TestSetConfigRoundTripAndUnset(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("SHAREFLY_PUBLIC_URL", "")
-	restarts := 0
-	restart := func() error { restarts++; return nil }
-	if err := setConfig("public-url", "https://share.example.com", restart); err != nil {
-		t.Fatal(err)
+	dataDir := t.TempDir()
+	var restartedFrom []string
+	restart := func(old string) error { restartedFrom = append(restartedFrom, old); return nil }
+	for _, kv := range [][2]string{
+		{"public-url", "https://share.example.com"}, {"server", "http://host:8787"}, {"data-dir", dataDir},
+		{"api-addr", "100.64.0.1:8787"}, {"public-addr", "127.0.0.1:9090"}, {"ttl", "1d"},
+	} {
+		if err := setConfig(kv[0], kv[1], restart); err != nil {
+			t.Fatalf("set %s: %v", kv[0], err)
+		}
 	}
-	if err := setConfig("server", "http://host:8787", restart); err != nil {
-		t.Fatal(err)
+	want := config{PublicURL: "https://share.example.com", Server: "http://host:8787", DataDir: dataDir,
+		APIAddr: "100.64.0.1:8787", PublicAddr: "127.0.0.1:9090", TTL: "1d"}
+	if c, err := loadConfig(); err != nil || c != want {
+		t.Fatalf("after set: %+v, %v; want %+v", c, err, want)
 	}
-	c, err := loadConfig()
-	if err != nil || c.PublicURL != "https://share.example.com" || c.Server != "http://host:8787" {
-		t.Fatalf("after set: %+v, %v", c, err)
-	}
-	if restarts != 1 {
-		t.Errorf("restarts = %d; public-url must restart the server so links change, server must not", restarts)
+	if len(restartedFrom) != 4 {
+		t.Errorf("restarts = %d; every server-side key (public-url, data-dir, api-addr, public-addr) must restart, client keys must not", len(restartedFrom))
 	}
 	if err := setConfig("server", "", restart); err != nil {
 		t.Fatal(err)
@@ -89,15 +92,41 @@ func TestSetConfigRoundTripAndUnset(t *testing.T) {
 	}
 }
 
+// Moving data-dir must restart the server that is still using the old dir, or it is never found again.
+func TestSetConfigDataDirRestartsFromOldDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	oldDir, newDir := t.TempDir(), t.TempDir()
+	if err := saveConfig(config{DataDir: oldDir}); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := setConfig("data-dir", newDir, func(old string) error { got = old; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got != oldDir {
+		t.Errorf("restart looked in %q, want the old data dir %q", got, oldDir)
+	}
+}
+
 func TestSetConfigRejectsBadInput(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	noRestart := func() error { t.Fatal("must not restart on invalid input"); return nil }
-	if err := setConfig("api-addr", "x", noRestart); err == nil || !strings.Contains(err.Error(), "unknown key") {
+	noRestart := func(string) error { t.Fatal("must not restart on invalid input"); return nil }
+	if err := setConfig("bogus", "x", noRestart); err == nil || !strings.Contains(err.Error(), "unknown key") {
 		t.Errorf("unknown key: err = %v", err)
 	}
-	for _, bad := range []string{"share.example.com", "ftp://x", "https://", "macmini:8787"} {
-		if err := setConfig("public-url", bad, noRestart); err == nil {
-			t.Errorf("public-url %q accepted, want error", bad)
+	bad := map[string][]string{
+		"public-url":  {"share.example.com", "ftp://x", "https://"},
+		"server":      {"macmini:8787"},
+		"data-dir":    {"relative/dir"},
+		"api-addr":    {"8787", "localhost"},
+		"public-addr": {"nope"},
+		"ttl":         {"7w", "0d"},
+	}
+	for key, values := range bad {
+		for _, v := range values {
+			if err := setConfig(key, v, noRestart); err == nil {
+				t.Errorf("%s %q accepted, want error", key, v)
+			}
 		}
 	}
 	if c, _ := loadConfig(); c != (config{}) {
@@ -105,26 +134,10 @@ func TestSetConfigRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestServerFlagsUseConfigPublicURL(t *testing.T) {
+// `sharefly config` must show every effective value, defaults included, so users can see where shares live.
+func TestShowConfigListsEffectiveValues(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("SHAREFLY_PUBLIC_URL", "")
-	if err := saveConfig(config{PublicURL: "https://file.example.com"}); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := parseServerFlags(nil)
-	if err != nil || cfg.publicURL != "https://file.example.com" {
-		t.Fatalf("publicURL = %q, %v; want the config file value", cfg.publicURL, err)
-	}
-	t.Setenv("SHAREFLY_PUBLIC_URL", "https://env.example.com")
-	if cfg, _ := parseServerFlags(nil); cfg.publicURL != "https://env.example.com" {
-		t.Errorf("env must override the config file, got %q", cfg.publicURL)
-	}
-}
-
-func TestShowConfigReportsSources(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("SHAREFLY_PUBLIC_URL", "")
-	t.Setenv("SHAREFLY_SERVER", "http://env:1")
+	t.Setenv("XDG_STATE_HOME", "/tmp/state")
 	if err := saveConfig(config{PublicURL: "https://file.example.com"}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +146,12 @@ func TestShowConfigReportsSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"config.json", "https://file.example.com", "http://env:1 (from $SHAREFLY_SERVER"} {
+	for _, want := range []string{
+		"config.json",
+		"https://file.example.com", "(config)",
+		"/tmp/state/sharefly", "(default)",
+		"127.0.0.1:8787", "127.0.0.1:8080", "7d",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

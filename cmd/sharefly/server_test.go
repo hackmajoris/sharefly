@@ -23,7 +23,7 @@ func TestParseServerFlagsRejectsExtraArgs(t *testing.T) {
 
 // `sharefly start` with no flags must give a working, local-only server whose links open in a local browser.
 func TestParseServerFlagsDefaults(t *testing.T) {
-	t.Setenv("SHAREFLY_PUBLIC_URL", "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", "")
 	cfg, err := parseServerFlags(nil)
 	if err != nil {
@@ -63,30 +63,45 @@ func TestDefaultDataDirHonoursXDGStateHome(t *testing.T) {
 	}
 }
 
-// An auto-started server gets no flags, so the env var is the only way its links can be public.
+// An auto-started server gets no flags, so the config file is how its links become public; a flag still wins.
 func TestParseServerFlagsPublicURLPrecedence(t *testing.T) {
-	t.Setenv("SHAREFLY_PUBLIC_URL", "https://env.example.com")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveConfig(config{PublicURL: "https://file.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := parseServerFlags(nil)
+	if err != nil || cfg.publicURL != "https://file.example.com" {
+		t.Errorf("config: publicURL = %q, %v", cfg.publicURL, err)
+	}
+	cfg, err = parseServerFlags([]string{"--public-url", "https://flag.example.com"})
+	if err != nil || cfg.publicURL != "https://flag.example.com" {
+		t.Errorf("flag must override config, got %q, %v", cfg.publicURL, err)
+	}
+	if err := saveConfig(config{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = parseServerFlags([]string{"--public-addr", "127.0.0.1:9090"})
+	if err != nil || cfg.publicURL != "http://127.0.0.1:9090" {
+		t.Errorf("default publicURL must follow --public-addr, got %q, %v", cfg.publicURL, err)
+	}
+}
+
+// A host configured once (api-addr, data-dir) must start correctly with a bare `sharefly start`.
+func TestParseServerFlagsReadsConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dataDir := t.TempDir()
+	if err := saveConfig(config{APIAddr: "100.64.0.1:8787", PublicAddr: "127.0.0.1:9090", DataDir: dataDir}); err != nil {
+		t.Fatal(err)
+	}
 	cfg, err := parseServerFlags(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.publicURL != "https://env.example.com" {
-		t.Errorf("env: publicURL = %q", cfg.publicURL)
+	if cfg.apiAddr != "100.64.0.1:8787" || cfg.publicAddr != "127.0.0.1:9090" || cfg.dataDir != dataDir {
+		t.Errorf("cfg = %+v, want values from the config file", cfg)
 	}
-	cfg, err = parseServerFlags([]string{"--public-url", "https://flag.example.com"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.publicURL != "https://flag.example.com" {
-		t.Errorf("flag must override env, got %q", cfg.publicURL)
-	}
-	t.Setenv("SHAREFLY_PUBLIC_URL", "")
-	cfg, err = parseServerFlags([]string{"--public-addr", "127.0.0.1:9090"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.publicURL != "http://127.0.0.1:9090" {
-		t.Errorf("default publicURL must follow --public-addr, got %q", cfg.publicURL)
+	if cfg, _ := parseServerFlags([]string{"--api-addr", "127.0.0.1:1"}); cfg.apiAddr != "127.0.0.1:1" {
+		t.Errorf("flag must override config, got %q", cfg.apiAddr)
 	}
 }
 

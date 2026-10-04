@@ -19,17 +19,14 @@ func resolveServer(flagVal string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if v := resolve(flagVal, "SHAREFLY_SERVER", c.Server); v != "" {
-		return v, nil
-	}
-	return defaultServer, nil
+	return c.resolve(flagVal, serverKey)
 }
 
 func parseClientArgs(name string, args []string, nargs int, ttl *string) (*client.Client, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	srv := fs.String("server", "", "server API URL (default $SHAREFLY_SERVER, config `server`, or "+defaultServer+")")
+	srv := fs.String("server", "", "server API URL (default: config `server`, else http://<api-addr>)")
 	if ttl != nil {
-		fs.StringVar(ttl, "ttl", "7d", "time to live: Nd, Nh, Nm or never")
+		fs.StringVar(ttl, "ttl", "", "time to live: Nd, Nh, Nm or never (default: config `ttl`, else "+defaultTTL+")")
 	}
 	var pos []string
 	for {
@@ -45,9 +42,18 @@ func parseClientArgs(name string, args []string, nargs int, ttl *string) (*clien
 	if len(pos) != nargs {
 		return nil, nil, fmt.Errorf("%s: expected %d argument(s), got %d", name, nargs, len(pos))
 	}
-	base, err := resolveServer(*srv)
+	cfg, err := loadConfig()
 	if err != nil {
 		return nil, nil, err
+	}
+	base, err := cfg.resolve(*srv, serverKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ttl != nil {
+		if *ttl, err = cfg.resolve(*ttl, ttlKey); err != nil {
+			return nil, nil, err
+		}
 	}
 	return &client.Client{BaseURL: base}, pos, nil
 }

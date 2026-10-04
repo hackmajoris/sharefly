@@ -5,37 +5,93 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/hackmajoris/sharefly/pkg/share"
+)
+
+const (
+	defaultPublicAddr = "127.0.0.1:8080"
+	defaultTTL        = "7d"
 )
 
 type config struct {
-	PublicURL string `json:"public_url,omitempty"`
-	Server    string `json:"server,omitempty"`
+	PublicURL  string `json:"public_url,omitempty"`
+	Server     string `json:"server,omitempty"`
+	DataDir    string `json:"data_dir,omitempty"`
+	APIAddr    string `json:"api_addr,omitempty"`
+	PublicAddr string `json:"public_addr,omitempty"`
+	TTL        string `json:"ttl,omitempty"`
 }
 
 type configKey struct {
-	name, env string
-	field     func(*config) *string
+	name       string
+	field      func(*config) *string
+	def        func(config) (string, error)
+	validate   func(string) error
+	serverSide bool
 }
 
 var configKeys = []configKey{
-	{"public-url", "SHAREFLY_PUBLIC_URL", func(c *config) *string { return &c.PublicURL }},
-	{"server", "SHAREFLY_SERVER", func(c *config) *string { return &c.Server }},
+	{"public-url", func(c *config) *string { return &c.PublicURL },
+		func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil }, validateURL, true},
+	{"server", func(c *config) *string { return &c.Server },
+		func(c config) (string, error) { return "http://" + dialAddr(or(c.APIAddr, defaultAPIAddr)), nil }, validateURL, false},
+	{"data-dir", func(c *config) *string { return &c.DataDir },
+		func(config) (string, error) { return defaultDataDir() }, validateAbsPath, true},
+	{"api-addr", func(c *config) *string { return &c.APIAddr },
+		func(config) (string, error) { return defaultAPIAddr, nil }, validateAddr, true},
+	{"public-addr", func(c *config) *string { return &c.PublicAddr },
+		func(config) (string, error) { return defaultPublicAddr, nil }, validateAddr, true},
+	{"ttl", func(c *config) *string { return &c.TTL },
+		func(config) (string, error) { return defaultTTL, nil }, validateTTL, false},
+}
+
+var (
+	serverKey     = configKeys[1]
+	dataDirKey    = configKeys[2]
+	apiAddrKey    = configKeys[3]
+	publicAddrKey = configKeys[4]
+	ttlKey        = configKeys[5]
+)
+
+// value returns the config file value or the key's default, and whether it came from the file.
+func (c config) value(k configKey) (string, bool, error) {
+	if v := *k.field(&c); v != "" {
+		return v, true, nil
+	}
+	v, err := k.def(c)
+	return v, false, err
+}
+
+func or(v, def string) string {
+	if v != "" {
+		return v
+	}
+	return def
+}
+
+// resolve gives a flag precedence over the config file and the default.
+func (c config) resolve(flagVal string, k configKey) (string, error) {
+	if flagVal != "" {
+		return flagVal, nil
+	}
+	v, _, err := c.value(k)
+	return v, err
 }
 
 func lookupKey(name string) (configKey, error) {
-	for _, k := range configKeys {
+	names := make([]string, len(configKeys))
+	for i, k := range configKeys {
 		if k.name == name {
 			return k, nil
 		}
-	}
-	names := make([]string, len(configKeys))
-	for i, k := range configKeys {
 		names[i] = k.name
 	}
 	return configKey{}, fmt.Errorf("unknown key %q (known: %s)", name, strings.Join(names, ", "))
@@ -90,23 +146,31 @@ func saveConfig(c config) error {
 	return os.Rename(tmp, path)
 }
 
-// resolve returns the first non-empty of flag, env and config file.
-func resolve(flagVal, env, fromConfig string) string {
-	if flagVal != "" {
-		return flagVal
-	}
-	if v := os.Getenv(env); v != "" {
-		return v
-	}
-	return fromConfig
-}
-
 func validateURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("%q is not an http(s) URL like https://share.example.com", raw)
 	}
 	return nil
+}
+
+func validateAddr(raw string) error {
+	if _, port, err := net.SplitHostPort(raw); err != nil || port == "" {
+		return fmt.Errorf("%q is not a host:port address like 127.0.0.1:8787", raw)
+	}
+	return nil
+}
+
+func validateAbsPath(raw string) error {
+	if !filepath.IsAbs(raw) {
+		return fmt.Errorf("%q is not an absolute path", raw)
+	}
+	return nil
+}
+
+func validateTTL(raw string) error {
+	_, _, err := share.ParseTTL(raw)
+	return err
 }
 
 func runConfig(args []string) error {
@@ -133,26 +197,26 @@ func showConfig(w io.Writer) error {
 	}
 	_, _ = fmt.Fprintf(w, "config file: %s\n", path)
 	for _, k := range configKeys {
-		v := *k.field(&c)
-		switch {
-		case os.Getenv(k.env) != "":
-			_, _ = fmt.Fprintf(w, "%-11s %s (from $%s, overrides the file)\n", k.name, os.Getenv(k.env), k.env)
-		case v != "":
-			_, _ = fmt.Fprintf(w, "%-11s %s\n", k.name, v)
-		default:
-			_, _ = fmt.Fprintf(w, "%-11s (not set)\n", k.name)
+		v, fromFile, err := c.value(k)
+		if err != nil {
+			return err
 		}
+		source := "default"
+		if fromFile {
+			source = "config"
+		}
+		_, _ = fmt.Fprintf(w, "%-12s %-40s (%s)\n", k.name, v, source)
 	}
 	return nil
 }
 
-func setConfig(name, value string, restart func() error) error {
+func setConfig(name, value string, restart func(oldDataDir string) error) error {
 	k, err := lookupKey(name)
 	if err != nil {
 		return err
 	}
 	if value != "" {
-		if err := validateURL(value); err != nil {
+		if err := k.validate(value); err != nil {
 			return err
 		}
 	}
@@ -160,27 +224,29 @@ func setConfig(name, value string, restart func() error) error {
 	if err != nil {
 		return err
 	}
+	oldDataDir, _, err := c.value(dataDirKey)
+	if err != nil {
+		return err
+	}
 	*k.field(&c) = value
 	if err := saveConfig(c); err != nil {
 		return err
 	}
-	if os.Getenv(k.env) != "" {
-		fmt.Fprintf(os.Stderr, "note: $%s is set and overrides the config file\n", k.env)
+	if k.name == dataDirKey.name {
+		if newDir, _, err := c.value(dataDirKey); err == nil && newDir != oldDataDir {
+			fmt.Fprintf(os.Stderr, "note: existing shares stay in %s; move them with: mv %q %q\n", oldDataDir, oldDataDir, newDir)
+		}
 	}
-	if k.name == "public-url" {
-		return restart()
+	if !k.serverSide {
+		return nil
 	}
-	return nil
+	return restart(oldDataDir)
 }
 
 // restartLocalServer applies a config change to a running local server by restarting it with the flags it was
 // started with. It is a no-op when no local server is running.
-func restartLocalServer() error {
-	dir, err := defaultDataDir()
-	if err != nil {
-		return err
-	}
-	return restartServer(dir, spawnServer, startWait)
+func restartLocalServer(dataDir string) error {
+	return restartServer(dataDir, spawnServer, startWait)
 }
 
 func restartServer(dataDir string, spawn func(args []string, dataDir string) (int, string, error), wait time.Duration) error {
@@ -191,8 +257,11 @@ func restartServer(dataDir string, spawn func(args []string, dataDir string) (in
 	if err != nil {
 		return err
 	}
-	if slices.Contains(args, "--public-url") || slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "--public-url=") }) {
-		fmt.Fprintln(os.Stderr, "note: the running server was started with --public-url, which overrides the config file")
+	for _, k := range configKeys {
+		flag := "--" + k.name
+		if k.serverSide && slices.ContainsFunc(args, func(a string) bool { return a == flag || strings.HasPrefix(a, flag+"=") }) {
+			fmt.Fprintf(os.Stderr, "note: the running server was started with %s, which overrides the config file\n", flag)
+		}
 	}
 	if err := stopServer(filepath.Join(dataDir, pidFileName), shutdownTimeout+time.Second); err != nil {
 		if errors.Is(err, errNotRunning) {

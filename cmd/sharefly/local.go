@@ -31,7 +31,7 @@ var errNotRunning = errors.New("no local sharefly server running")
 // ensureLocalServer starts a background server when the client targets this machine and nothing answers.
 // A remote server can't be started from here, so its connection errors are left to the caller.
 func ensureLocalServer(c *client.Client, spawn func(apiAddr string) error, wait time.Duration) error {
-	addr, ok := localAPIAddr(c.BaseURL)
+	addr, ok := ownServerAddr(c.BaseURL)
 	if !ok {
 		return nil
 	}
@@ -113,8 +113,30 @@ func localAPIAddr(baseURL string) (string, bool) {
 	return net.JoinHostPort(u.Hostname(), port), true
 }
 
+// ownServerAddr reports whether baseURL points at a server this machine runs: a loopback address, or the
+// configured api-addr (e.g. its tailnet IP). It returns the address that server should listen on.
+func ownServerAddr(baseURL string) (string, bool) {
+	if c, err := loadConfig(); err == nil {
+		if apiAddr, err := c.resolve("", apiAddrKey); err == nil {
+			if u, err := url.Parse(baseURL); err == nil && u.Port() != "" &&
+				net.JoinHostPort(u.Hostname(), u.Port()) == dialAddr(apiAddr) {
+				return apiAddr, true
+			}
+		}
+	}
+	return localAPIAddr(baseURL)
+}
+
+func configuredDataDir() (string, error) {
+	c, err := loadConfig()
+	if err != nil {
+		return "", err
+	}
+	return c.resolve("", dataDirKey)
+}
+
 func logPath() string {
-	dir, err := defaultDataDir()
+	dir, err := configuredDataDir()
 	if err != nil {
 		return logFileName
 	}
@@ -122,7 +144,7 @@ func logPath() string {
 }
 
 func spawnLocalServer(apiAddr string) error {
-	dir, err := defaultDataDir()
+	dir, err := configuredDataDir()
 	if err != nil {
 		return err
 	}
@@ -160,21 +182,21 @@ func spawnServer(args []string, dataDir string) (int, string, error) {
 
 func runStop(args []string) error {
 	fs := flag.NewFlagSet("stop", flag.ContinueOnError)
-	dataDir := fs.String("data-dir", "", "data directory (default $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
+	dataDir := fs.String("data-dir", "", "data directory (default: config `data-dir`, else $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
-	if *dataDir == "" {
-		dir, err := defaultDataDir()
-		if err != nil {
-			return err
-		}
-		*dataDir = dir
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
 	}
-	err := stopServer(filepath.Join(*dataDir, pidFileName), shutdownTimeout+time.Second)
+	if *dataDir, err = cfg.resolve(*dataDir, dataDirKey); err != nil {
+		return err
+	}
+	err = stopServer(filepath.Join(*dataDir, pidFileName), shutdownTimeout+time.Second)
 	if !errors.Is(err, errNotRunning) {
 		return err
 	}
@@ -182,10 +204,11 @@ func runStop(args []string) error {
 	if resolveErr != nil {
 		return resolveErr
 	}
-	addr, ok := localAPIAddr(base)
+	addr, ok := ownServerAddr(base)
 	if !ok {
 		return err
 	}
+	addr = dialAddr(addr)
 	if _, listErr := (&client.Client{BaseURL: base}).List(); listErr != nil {
 		return err
 	}

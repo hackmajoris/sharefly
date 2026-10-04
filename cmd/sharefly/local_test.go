@@ -79,6 +79,23 @@ func TestEnsureLocalServerLeavesRunningServerAlone(t *testing.T) {
 	}
 }
 
+// On a host whose api-addr is its tailnet IP, `serve` targets that address and must still auto-start it.
+func TestOwnServerAddrMatchesConfiguredAPIAddr(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveConfig(config{APIAddr: "100.64.0.1:8787"}); err != nil {
+		t.Fatal(err)
+	}
+	if addr, ok := ownServerAddr("http://100.64.0.1:8787"); !ok || addr != "100.64.0.1:8787" {
+		t.Errorf("own tailnet address: got %q, %v", addr, ok)
+	}
+	if _, ok := ownServerAddr("http://100.64.0.2:8787"); ok {
+		t.Error("another machine's address must not count as this machine's server")
+	}
+	if addr, ok := ownServerAddr("http://127.0.0.1:8787"); !ok || addr != "127.0.0.1:8787" {
+		t.Errorf("loopback must still count, got %q, %v", addr, ok)
+	}
+}
+
 // A server on another machine can't be started from here; its errors must surface unchanged.
 func TestEnsureLocalServerIgnoresRemoteTargets(t *testing.T) {
 	spawn := func(string) error { t.Fatal("must not spawn for a remote server"); return nil }
@@ -106,7 +123,10 @@ func TestRunStopReportsServerWithoutPidFile(t *testing.T) {
 	srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	t.Setenv("SHAREFLY_SERVER", "http://"+addr)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveConfig(config{Server: "http://" + addr}); err != nil {
+		t.Fatal(err)
+	}
 	err = runStop([]string{"--data-dir", t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "no pid file") || !strings.Contains(err.Error(), "kill") {
 		t.Fatalf("err = %v, want a pointer to the running server and how to stop it", err)
@@ -114,7 +134,10 @@ func TestRunStopReportsServerWithoutPidFile(t *testing.T) {
 }
 
 func TestRunStopNothingRunning(t *testing.T) {
-	t.Setenv("SHAREFLY_SERVER", "http://"+freeAddr(t))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveConfig(config{Server: "http://" + freeAddr(t)}); err != nil {
+		t.Fatal(err)
+	}
 	if err := runStop([]string{"--data-dir", t.TempDir()}); !errors.Is(err, errNotRunning) {
 		t.Fatalf("err = %v, want errNotRunning", err)
 	}

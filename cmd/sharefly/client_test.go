@@ -9,10 +9,9 @@ import (
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
-// Precedence flag > env > config file > default lets a one-off --server or env override a saved setting.
+// Precedence flag > config file > default; the default follows api-addr so a configured host talks to itself.
 func TestResolveServerPrecedence(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("SHAREFLY_SERVER", "")
 	check := func(flagVal, want string) {
 		t.Helper()
 		got, err := resolveServer(flagVal)
@@ -21,13 +20,36 @@ func TestResolveServerPrecedence(t *testing.T) {
 		}
 	}
 	check("", defaultServer)
-	if err := saveConfig(config{Server: "http://file:1"}); err != nil {
+	if err := saveConfig(config{APIAddr: "100.64.0.1:8787"}); err != nil {
+		t.Fatal(err)
+	}
+	check("", "http://100.64.0.1:8787")
+	if err := saveConfig(config{APIAddr: "0.0.0.0:8787"}); err != nil {
+		t.Fatal(err)
+	}
+	check("", "http://127.0.0.1:8787")
+	if err := saveConfig(config{Server: "http://file:1", APIAddr: "100.64.0.1:8787"}); err != nil {
 		t.Fatal(err)
 	}
 	check("", "http://file:1")
-	t.Setenv("SHAREFLY_SERVER", "http://env:1")
-	check("", "http://env:1")
 	check("http://flag:1", "http://flag:1")
+}
+
+func TestParseClientArgsTTLFromConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var ttl string
+	if _, _, err := parseClientArgs("serve", []string{"x"}, 1, &ttl); err != nil || ttl != defaultTTL {
+		t.Fatalf("ttl = %q, %v; want %s", ttl, err, defaultTTL)
+	}
+	if err := saveConfig(config{TTL: "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := parseClientArgs("serve", []string{"x"}, 1, &ttl); err != nil || ttl != "1h" {
+		t.Fatalf("ttl = %q, %v; want the configured 1h", ttl, err)
+	}
+	if _, _, err := parseClientArgs("serve", []string{"x", "--ttl", "never"}, 1, &ttl); err != nil || ttl != "never" {
+		t.Fatalf("ttl = %q, %v; flag must override config", ttl, err)
+	}
 }
 
 func TestParseClientArgsFlagsAfterPath(t *testing.T) {

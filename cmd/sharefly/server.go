@@ -36,10 +36,10 @@ type serverConfig struct {
 func parseServerFlags(args []string) (serverConfig, error) {
 	var cfg serverConfig
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
-	fs.StringVar(&cfg.apiAddr, "api-addr", defaultAPIAddr, "management API listen address (use the tailnet IP to accept other devices)")
-	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
-	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
-	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default $SHAREFLY_PUBLIC_URL, config `public-url`, or http://<public-addr>)")
+	fs.StringVar(&cfg.apiAddr, "api-addr", "", "management API listen address; the tailnet IP accepts other devices (default: config `api-addr`, else "+defaultAPIAddr+")")
+	fs.StringVar(&cfg.publicAddr, "public-addr", "", "file server listen address (default: config `public-addr`, else "+defaultPublicAddr+")")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default: config `data-dir`, else $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
+	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default: config `public-url`, else http://<public-addr>)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -50,16 +50,17 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	if err != nil {
 		return cfg, err
 	}
-	cfg.publicURL = resolve(cfg.publicURL, "SHAREFLY_PUBLIC_URL", file.PublicURL)
-	if cfg.publicURL == "" {
-		cfg.publicURL = "http://" + cfg.publicAddr
+	if cfg.apiAddr, err = file.resolve(cfg.apiAddr, apiAddrKey); err != nil {
+		return cfg, err
 	}
-	if cfg.dataDir == "" {
-		dir, err := defaultDataDir()
-		if err != nil {
-			return cfg, err
-		}
-		cfg.dataDir = dir
+	if cfg.publicAddr, err = file.resolve(cfg.publicAddr, publicAddrKey); err != nil {
+		return cfg, err
+	}
+	if cfg.dataDir, err = file.resolve(cfg.dataDir, dataDirKey); err != nil {
+		return cfg, err
+	}
+	if cfg.publicURL == "" {
+		cfg.publicURL = or(file.PublicURL, "http://"+cfg.publicAddr)
 	}
 	return cfg, nil
 }
