@@ -36,7 +36,20 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /shares", a.list)
 	mux.HandleFunc("DELETE /shares/{id}", a.delete)
 	mux.HandleFunc("POST /shares/{id}/renew", a.renew)
+	mux.HandleFunc("GET /status", a.status)
 	return mux
+}
+
+// Base returns the base URL links are built from.
+func (a *API) Base() string {
+	if a.PublicURLFunc != nil {
+		return a.PublicURLFunc()
+	}
+	return a.PublicURL
+}
+
+func (a *API) status(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"public_url": a.Base()})
 }
 
 func (a *API) SharesDir() string { return filepath.Join(a.DataDir, "shares") }
@@ -166,11 +179,7 @@ func (a *API) renew(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) response(sh share.Share) share.Link {
 	path := (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath()
-	base := a.PublicURL
-	if a.PublicURLFunc != nil {
-		base = a.PublicURLFunc()
-	}
-	return share.Link{Share: sh, URL: strings.TrimSuffix(base, "/") + path}
+	return share.Link{Share: sh, URL: strings.TrimSuffix(a.Base(), "/") + path}
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {

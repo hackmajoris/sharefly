@@ -65,21 +65,33 @@ sharefly serve report.html | pbcopy          # link on the clipboard
 open "$(sharefly serve report.html)"         # open it in your browser
 ```
 
-### Make links public with a Cloudflare Tunnel
+### Make links public, instantly (quick tunnel)
+
+No domain or Cloudflare account needed. sharefly runs `cloudflared` for you and uses the random address it gets.
+
+```
+brew install cloudflared
+sharefly config set tunnel quick
+sharefly serve report.html     # → https://<random-words>.trycloudflare.com/<id>/report.html
+```
+
+The address changes every time the server starts, so old links stop working after `sharefly stop`. Use your own domain for links that last.
+
+### Make links public on your own domain
 
 You need a domain on Cloudflare.
 
-1. In the Cloudflare dashboard, go to Zero Trust → Networks → Tunnels and create a tunnel. Add a public hostname, e.g. `share.yourdomain.com`, with service `HTTP` and URL `127.0.0.1:8080`. Leave Path empty.
-2. On the machine that runs sharefly, install the connector with the token the dashboard shows. The token is a secret.
+1. In the Cloudflare dashboard, go to Zero Trust → Networks → Tunnels and create a tunnel. On the install screen copy only the token (the long `eyJ…` string); don't run the install command. Add a public hostname, e.g. `share.yourdomain.com`, with service `HTTP` and URL `127.0.0.1:8080`. Leave Path empty.
+2. Give sharefly the token and your domain. The token is a secret: it's stored in the config file, which only you can read, and is never shown on the command line.
    ```
    brew install cloudflared
-   sudo cloudflared service install <TOKEN>
-   ```
-3. Tell sharefly to build links with your domain. A running server picks it up immediately.
-   ```
-   sharefly config set public-url https://share.yourdomain.com
+   sharefly config set tunnel-token eyJ...
+   sharefly config set public-url share.yourdomain.com
+   sharefly config set tunnel token
    sharefly serve report.html     # → https://share.yourdomain.com/<id>/report.html
    ```
+
+sharefly starts `cloudflared` together with its server, restarts it if it crashes, and stops it with `sharefly stop`; its output goes to the server log. If you installed cloudflared as a system service earlier, remove it (`sudo cloudflared service uninstall`) so two connectors don't run side by side.
 
 ### Share from all your devices
 
@@ -118,9 +130,10 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 | `can't reach sharefly server at ...` | For a remote server: check `tailscale status` and that the server is running. The `server` setting must include `http://` (`sharefly config` shows it). |
 | `local server did not come up` | Read the log: `tail ~/.local/state/sharefly/server.log`. Usually ports 8787 or 8080 are taken: `lsof -iTCP:8787 -iTCP:8080 -sTCP:LISTEN`. |
 | `a sharefly server is answering ... but has no pid file` | A server started by an older version or with another `--data-dir` is still running. Stop it with the `kill` command from the message. |
-| Public link shows Cloudflare 502 | cloudflared can't reach the file server. sharefly must be running on the same machine as cloudflared, and the tunnel's hostname must point at `127.0.0.1:8080`. |
-| Public link shows Cloudflare 1033 | The tunnel is down. Check the connector: `sudo cloudflared service uninstall`, then install it again with the token from the dashboard. |
+| Public link shows Cloudflare 502 | cloudflared can't reach the file server. The sharefly server must be running, and the tunnel's hostname must point at `127.0.0.1:8080`. |
+| Public link shows Cloudflare 1033 | The tunnel is down. Look for `cloudflared:` lines in `~/.local/state/sharefly/server.log`; a wrong token shows up there. Check `sharefly config` for `tunnel` and `tunnel-token`. |
 | Public link gives a DNS error | The domain isn't Active on Cloudflare yet, or the tunnel has no public hostname. |
+| `tunnel is ... but cloudflared isn't installed` | `brew install cloudflared`. |
 | Public link shows `404 page not found` | The share expired or was deleted. Check `sharefly ls`. |
 | Links still show `127.0.0.1` | Check `sharefly config`. If the server was started with `--public-url`, that flag overrides the config file. |
 
@@ -160,15 +173,17 @@ Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/co
 | `data-dir` | `~/.local/state/sharefly` (`$XDG_STATE_HOME/sharefly` if set) | server, `stop` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.args.json`, `server.log` |
 | `api-addr` | `127.0.0.1:8787` | server | management API listen address; the tailnet IP accepts other devices |
 | `public-addr` | `127.0.0.1:8080` | server | file server listen address (what cloudflared points at) |
+| `tunnel` | `off` | server | `off`, `quick` (random trycloudflare.com URL; links use it automatically) or `token` (your tunnel) |
+| `tunnel-token` | none | server | Cloudflare tunnel token for `tunnel=token`; secret, shown hidden, no flag |
 | `ttl` | `7d` | `serve` | default link lifetime |
 
 - `sharefly config open` opens the file in `$VISUAL` or `$EDITOR` (e.g. `EDITOR="code --wait"`), or the system's default app if neither is set. The file lists every key with its default filled in, using underscores (`public_url`). `public_url` and `server` stay empty unless you set them, which means they follow `public_addr` and `api_addr`. After a terminal editor exits, the file is checked and a running local server restarts if a listen address or `data_dir` changed. Unknown keys and invalid values are rejected by every command except `config set` and `config open`, so you can always repair the file. A URL without a scheme is accepted: `public-url` gets `https://` and `server` gets `http://`.
-- Every key has a matching flag (`--public-url`, `--server`, `--data-dir`, `--api-addr`, `--public-addr`, `--ttl`) that overrides the config file for one command.
-- A running server reads `public-url` from the file whenever the file changes, however you edit it, unless it was started with `--public-url`. Setting another server key (`data-dir`, `api-addr`, `public-addr`) restarts a running local server with the flags it was started with, so the change applies at once. Changing `data-dir` doesn't move existing shares; the command prints where they are.
+- Every key except `tunnel-token` has a matching flag (`--public-url`, `--server`, `--data-dir`, `--api-addr`, `--public-addr`, `--ttl`, `--tunnel`) that overrides the config file for one command, e.g. `sharefly start --tunnel quick`. The token has no flag so it never shows up in `ps`.
+- A running server reads `public-url` from the file whenever the file changes, however you edit it, unless it was started with `--public-url`. Setting another server key (`data-dir`, `api-addr`, `public-addr`, `tunnel`, `tunnel-token`) restarts a running local server with the flags it was started with, so the change applies at once. Changing `data-dir` doesn't move existing shares; the command prints where they are.
 
 ### Server
 
-`sharefly start` launches the server in the background, waits until it answers, prints its pid and log path, and returns; if one is already running it says so. `sharefly server` runs in the foreground until Ctrl-C or SIGTERM, to watch its log or to run it under your own service manager. Both read the config file and accept `--api-addr`, `--public-addr`, `--public-url` and `--data-dir`. While running, the server writes `<data-dir>/server.pid` (used by `stop`) and `<data-dir>/server.args.json` (used to restart it after a config change), and logs to `<data-dir>/server.log` when started in the background.
+`sharefly start` launches the server in the background, waits until it answers, prints its pid and log path, and returns; if one is already running it says so. `sharefly server` runs in the foreground until Ctrl-C or SIGTERM, to watch its log or to run it under your own service manager. Both read the config file and accept `--api-addr`, `--public-addr`, `--public-url`, `--data-dir` and `--tunnel`. With a tunnel, the server also runs `cloudflared`; in quick mode it waits up to 30s for the tunnel address before answering, so the first link is already public. While running, the server writes `<data-dir>/server.pid` (used by `stop`) and `<data-dir>/server.args.json` (used to restart it after a config change), and logs to `<data-dir>/server.log` when started in the background.
 
 ### HTTP API
 
@@ -192,7 +207,7 @@ The archive may hold only regular files and directories with relative paths, at 
 - **Limits:** 100MB per upload (compressed and uncompressed), 10000 files.
 - **What gets uploaded:** empty folders aren't. `.git` and `.DS_Store` are skipped. Inside a folder, symlinks and other non-regular files are skipped with a warning, and a symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed.
 - **Data folder:** at startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. Don't put files there by hand.
-- **Network:** the file server binds `127.0.0.1` and is reached publicly only through cloudflared. sharefly never talks to cloudflared or the Cloudflare API.
+- **Network:** the file server binds `127.0.0.1` and is reached publicly only through cloudflared. With `tunnel` set, sharefly runs the `cloudflared` binary itself; it never calls the Cloudflare API.
 
 ## Development
 

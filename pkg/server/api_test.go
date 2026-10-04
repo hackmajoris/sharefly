@@ -346,3 +346,14 @@ func TestAPIUsesPublicURLFunc(t *testing.T) {
 		t.Errorf("url after change = %q", got)
 	}
 }
+
+// The status endpoint is how `start` and other clients learn the live public URL (e.g. a quick tunnel's).
+func TestAPIStatusReportsPublicURL(t *testing.T) {
+	api := newTestAPI(t, 1<<20)
+	api.PublicURLFunc = func() string { return "https://x-y.trycloudflare.com" }
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/status", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"public_url":"https://x-y.trycloudflare.com"`) {
+		t.Errorf("status = %d %s", rec.Code, rec.Body.String())
+	}
+}

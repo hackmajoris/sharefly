@@ -26,12 +26,14 @@ const (
 )
 
 type config struct {
-	PublicURL  string `json:"public_url"`
-	Server     string `json:"server"`
-	DataDir    string `json:"data_dir"`
-	APIAddr    string `json:"api_addr"`
-	PublicAddr string `json:"public_addr"`
-	TTL        string `json:"ttl"`
+	PublicURL   string `json:"public_url"`
+	Server      string `json:"server"`
+	DataDir     string `json:"data_dir"`
+	APIAddr     string `json:"api_addr"`
+	PublicAddr  string `json:"public_addr"`
+	TTL         string `json:"ttl"`
+	Tunnel      string `json:"tunnel"`
+	TunnelToken string `json:"tunnel_token"`
 }
 
 type configKey struct {
@@ -46,6 +48,8 @@ type configKey struct {
 	defaultHelp string
 	// live keys are picked up by a running server without a restart
 	live bool
+	// secret keys are hidden by `sharefly config` and have no flag, so they never show up in ps or server.args.json
+	secret bool
 	// scheme is prepended when a URL value is given without one, e.g. a bare domain
 	scheme string
 }
@@ -87,6 +91,18 @@ var configKeys = []configKey{
 		def:      func(config) (string, error) { return defaultTTL, nil },
 		validate: validateTTL,
 	},
+	{
+		name: "tunnel", help: "tunnel the server runs: off, quick (random trycloudflare.com URL) or token (your Cloudflare tunnel)",
+		field:    func(c *config) *string { return &c.Tunnel },
+		def:      func(config) (string, error) { return tunnelOff, nil },
+		validate: validateTunnel, serverSide: true,
+	},
+	{
+		name: "tunnel-token", help: "Cloudflare tunnel token used by tunnel=token; secret, set only here",
+		field:    func(c *config) *string { return &c.TunnelToken },
+		def:      func(config) (string, error) { return "", nil },
+		validate: validateToken, serverSide: true, secret: true, defaultHelp: "none",
+	},
 }
 
 var (
@@ -95,6 +111,7 @@ var (
 	apiAddrKey    = configKeys[3]
 	publicAddrKey = configKeys[4]
 	ttlKey        = configKeys[5]
+	tunnelKey     = configKeys[6]
 )
 
 // value returns the config file value or the key's default, and whether it came from the file.
@@ -217,7 +234,7 @@ func saveConfig(c config) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -241,6 +258,13 @@ func validateAddr(raw string) error {
 func validateAbsPath(raw string) error {
 	if !filepath.IsAbs(raw) {
 		return fmt.Errorf("%q is not an absolute path", raw)
+	}
+	return nil
+}
+
+func validateToken(raw string) error {
+	if len(raw) < 20 || strings.ContainsAny(raw, " \t\n") {
+		return errors.New("that doesn't look like a tunnel token: copy the long eyJ... string from the Cloudflare dashboard")
 	}
 	return nil
 }
@@ -284,7 +308,8 @@ commands:
   open                edit the config file in $VISUAL, $EDITOR or the default app
 
 config file: %s
-A flag with the same name (e.g. --api-addr) overrides a setting for one command.
+A flag with the same name (e.g. --api-addr) overrides a setting for one command;
+tunnel-token has no flag, so the secret never appears in ps.
 
 keys:
 `, path)
@@ -396,6 +421,9 @@ func showConfig(w io.Writer) error {
 		source := "config"
 		if def, err := k.def(c); !fromFile || (err == nil && v == def) {
 			source = "default"
+		}
+		if k.secret && v != "" {
+			v = v[:4] + "…(hidden)"
 		}
 		_, _ = fmt.Fprintf(w, "%-12s %-40s (%s)\n", k.name, v, source)
 	}

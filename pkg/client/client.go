@@ -92,6 +92,15 @@ func (c *Client) Renew(id, ttl string) (share.Link, error) {
 	return sh, c.handle(resp, err, http.StatusOK, &sh)
 }
 
+// PublicURL returns the base URL the server currently builds links from.
+func (c *Client) PublicURL() (string, error) {
+	resp, err := apiClient.Get(c.endpoint("/status"))
+	var st struct {
+		PublicURL string `json:"public_url"`
+	}
+	return st.PublicURL, c.handle(resp, err, http.StatusOK, &st)
+}
+
 func (c *Client) endpoint(path string) string {
 	return strings.TrimSuffix(c.BaseURL, "/") + path
 }

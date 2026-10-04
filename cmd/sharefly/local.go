@@ -22,7 +22,7 @@ const (
 	pidFileName    = "server.pid"
 	argsFileName   = "server.args.json"
 	logFileName    = "server.log"
-	startWait      = 5 * time.Second
+	startWait      = quickURLWait + 10*time.Second
 	pollInterval   = 100 * time.Millisecond
 )
 
@@ -80,7 +80,11 @@ func startBackground(cfg serverConfig, args []string, spawn func(args []string, 
 	if err := waitReady(c, wait, logFile); err != nil {
 		return err
 	}
-	fmt.Printf("sharefly server running (pid %d, api %s, links %s, log %s)\n", pid, cfg.apiAddr, cfg.publicURL, logFile)
+	links := cfg.publicURL
+	if u, err := c.PublicURL(); err == nil {
+		links = u
+	}
+	fmt.Printf("sharefly server running (pid %d, api %s, links %s, log %s)\n", pid, cfg.apiAddr, links, logFile)
 	return nil
 }
 

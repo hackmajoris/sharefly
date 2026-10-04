@@ -34,6 +34,8 @@ type serverConfig struct {
 	publicURL  string
 	// publicURLFlag is true when --public-url pinned the URL; otherwise it follows the config file live
 	publicURLFlag bool
+	tunnel        string
+	tunnelToken   string
 }
 
 func parseServerFlags(args []string) (serverConfig, error) {
@@ -43,6 +45,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	fs.StringVar(&cfg.publicAddr, "public-addr", "", "file server listen address (default: config `public-addr`, else "+defaultPublicAddr+")")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default: config `data-dir`, else $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
 	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default: config `public-url`, else http://<public-addr>)")
+	fs.StringVar(&cfg.tunnel, "tunnel", "", "tunnel to run: off, quick or token (default: config `tunnel`, else off)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -62,6 +65,13 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	if cfg.dataDir, err = file.resolve(cfg.dataDir, dataDirKey); err != nil {
 		return cfg, err
 	}
+	if cfg.tunnel, err = file.resolve(cfg.tunnel, tunnelKey); err != nil {
+		return cfg, err
+	}
+	if err := validateTunnel(cfg.tunnel); err != nil {
+		return cfg, err
+	}
+	cfg.tunnelToken = file.TunnelToken
 	cfg.publicURLFlag = cfg.publicURL != ""
 	if cfg.publicURL == "" {
 		cfg.publicURL = or(file.PublicURL, "http://"+cfg.publicAddr)
@@ -90,10 +100,11 @@ func runServer(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := &server.API{Store: store, DataDir: cfg.dataDir, PublicURL: cfg.publicURL, MaxBytes: maxUploadBytes}
-	if !cfg.publicURLFlag {
-		api.PublicURLFunc = newLivePublicURL(cfg.publicURL, cfg.publicAddr).get
+	tun, err := newTunnel(cfg.tunnel, cfg.tunnelToken, cfg.publicAddr)
+	if err != nil {
+		return err
 	}
+	api := &server.API{Store: store, DataDir: cfg.dataDir, MaxBytes: maxUploadBytes, PublicURLFunc: publicURLFunc(cfg, tun)}
 	sharesDir, tmpDir := api.SharesDir(), api.TmpDir()
 	for _, d := range []string{sharesDir, tmpDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -142,6 +153,19 @@ func runServer(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if tun != nil {
+		tunDone := make(chan struct{})
+		go func() { tun.run(ctx); close(tunDone) }()
+		defer func() { stop(); <-tunDone }()
+		log.Printf("tunnel: %s via %s", cfg.tunnel, tun.bin)
+		if cfg.tunnel == tunnelQuick && !tun.waitURL(quickURLWait) {
+			log.Printf("tunnel: no quick tunnel URL after %s; links use %s until it arrives", quickURLWait, api.Base())
+		}
+		if cfg.tunnel == tunnelToken && !cfg.publicURLFlag && api.Base() == "http://"+cfg.publicAddr {
+			log.Printf("tunnel: public-url is not set, so links point at %s; set it to your tunnel hostname", api.Base())
+		}
+	}
 
 	errc := make(chan error, len(servers))
 	for i, ln := range []net.Listener{apiLn, publicLn} {
@@ -221,4 +245,21 @@ func (l *livePublicURL) get() string {
 		l.url = u
 	}
 	return l.url
+}
+
+// publicURLFunc picks the base URL for links: an explicit --public-url, else a quick tunnel's URL once known,
+// else public-url from the config file, re-read whenever the file changes.
+func publicURLFunc(cfg serverConfig, tun *tunnel) func() string {
+	if cfg.publicURLFlag {
+		return func() string { return cfg.publicURL }
+	}
+	live := newLivePublicURL(cfg.publicURL, cfg.publicAddr)
+	return func() string {
+		if tun != nil && tun.mode == tunnelQuick {
+			if u := tun.URL(); u != "" {
+				return u
+			}
+		}
+		return live.get()
+	}
 }

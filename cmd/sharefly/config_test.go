@@ -78,7 +78,7 @@ func TestSetConfigRoundTripAndUnset(t *testing.T) {
 		}
 	}
 	want := config{PublicURL: "https://share.example.com", Server: "http://host:8787", DataDir: dataDir,
-		APIAddr: "100.64.0.1:8787", PublicAddr: "127.0.0.1:9090", TTL: "1d"}
+		APIAddr: "100.64.0.1:8787", PublicAddr: "127.0.0.1:9090", TTL: "1d", Tunnel: tunnelOff}
 	if c, err := loadConfig(); err != nil || c != want {
 		t.Fatalf("after set: %+v, %v; want %+v", c, err, want)
 	}
@@ -320,6 +320,7 @@ func TestSavedConfigListsEveryKeyWithDefaults(t *testing.T) {
 	want := map[string]string{
 		"public_url": "", "server": "",
 		"data_dir": "/tmp/state/sharefly", "api_addr": "127.0.0.1:8787", "public_addr": "127.0.0.1:8080", "ttl": "7d",
+		"tunnel": "off", "tunnel_token": "",
 	}
 	if len(raw) != len(want) {
 		t.Errorf("file has %d keys, want %d: %s", len(raw), len(want), data)
@@ -472,5 +473,48 @@ func TestSetConfigRepairsInvalidValue(t *testing.T) {
 	}
 	if _, err := loadConfig(); err != nil {
 		t.Errorf("file still invalid after set: %v", err)
+	}
+}
+
+const testToken = "eyJhIjoiMTIzNDU2Nzg5MCIsInQiOiJhYmMifQ=="
+
+// The token is a credential: `sharefly config` must not print it and the file must be private.
+func TestTunnelTokenIsHiddenAndFilePrivate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := setConfig("tunnel-token", testToken, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := showConfig(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), testToken) || !strings.Contains(buf.String(), "(hidden)") {
+		t.Errorf("token not hidden:\n%s", buf.String())
+	}
+	fi, err := os.Stat(filepath.Join(dir, "sharefly", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("config file mode = %v, want 0600 because it holds the tunnel token", fi.Mode().Perm())
+	}
+}
+
+func TestTunnelSettingsValidation(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	noop := func(string) error { return nil }
+	for _, bad := range []string{"on", "yes"} {
+		if err := setConfig("tunnel", bad, noop); err == nil {
+			t.Errorf("tunnel %q accepted", bad)
+		}
+	}
+	if err := setConfig("tunnel-token", "short", noop); err == nil {
+		t.Error("obviously wrong token accepted")
+	}
+	for _, ok := range []string{"off", "quick", "token"} {
+		if err := setConfig("tunnel", ok, noop); err != nil {
+			t.Errorf("tunnel %q rejected: %v", ok, err)
+		}
 	}
 }
