@@ -25,12 +25,12 @@ const (
 )
 
 type config struct {
-	PublicURL  string `json:"public_url,omitempty"`
-	Server     string `json:"server,omitempty"`
-	DataDir    string `json:"data_dir,omitempty"`
-	APIAddr    string `json:"api_addr,omitempty"`
-	PublicAddr string `json:"public_addr,omitempty"`
-	TTL        string `json:"ttl,omitempty"`
+	PublicURL  string `json:"public_url"`
+	Server     string `json:"server"`
+	DataDir    string `json:"data_dir"`
+	APIAddr    string `json:"api_addr"`
+	PublicAddr string `json:"public_addr"`
+	TTL        string `json:"ttl"`
 }
 
 type configKey struct {
@@ -39,21 +39,23 @@ type configKey struct {
 	def        func(config) (string, error)
 	validate   func(string) error
 	serverSide bool
+	// derived keys default to another key's value, so the file keeps them empty to keep following it
+	derived bool
 }
 
 var configKeys = []configKey{
 	{"public-url", func(c *config) *string { return &c.PublicURL },
-		func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil }, validateURL, true},
+		func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil }, validateURL, true, true},
 	{"server", func(c *config) *string { return &c.Server },
-		func(c config) (string, error) { return "http://" + dialAddr(or(c.APIAddr, defaultAPIAddr)), nil }, validateURL, false},
+		func(c config) (string, error) { return "http://" + dialAddr(or(c.APIAddr, defaultAPIAddr)), nil }, validateURL, false, true},
 	{"data-dir", func(c *config) *string { return &c.DataDir },
-		func(config) (string, error) { return defaultDataDir() }, validateAbsPath, true},
+		func(config) (string, error) { return defaultDataDir() }, validateAbsPath, true, false},
 	{"api-addr", func(c *config) *string { return &c.APIAddr },
-		func(config) (string, error) { return defaultAPIAddr, nil }, validateAddr, true},
+		func(config) (string, error) { return defaultAPIAddr, nil }, validateAddr, true, false},
 	{"public-addr", func(c *config) *string { return &c.PublicAddr },
-		func(config) (string, error) { return defaultPublicAddr, nil }, validateAddr, true},
+		func(config) (string, error) { return defaultPublicAddr, nil }, validateAddr, true, false},
 	{"ttl", func(c *config) *string { return &c.TTL },
-		func(config) (string, error) { return defaultTTL, nil }, validateTTL, false},
+		func(config) (string, error) { return defaultTTL, nil }, validateTTL, false, false},
 }
 
 var (
@@ -139,10 +141,19 @@ func loadConfig() (config, error) {
 	return c, nil
 }
 
+// saveConfig writes every key so the file documents itself: independent keys get their default filled in,
+// derived keys stay empty so they keep following the key they derive from.
 func saveConfig(c config) error {
 	path, err := configPath()
 	if err != nil {
 		return err
+	}
+	for _, k := range configKeys {
+		if f := k.field(&c); *f == "" && !k.derived {
+			if *f, err = k.def(c); err != nil {
+				return err
+			}
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -221,16 +232,9 @@ func openConfig(editor []string, restart func(oldDataDir string) error) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if err := saveConfig(before); err != nil {
-			return err
-		}
+	if err := saveConfig(before); err != nil {
+		return err
 	}
-	names := make([]string, len(configKeys))
-	for i, k := range configKeys {
-		names[i] = strings.ReplaceAll(k.name, "-", "_")
-	}
-	fmt.Fprintf(os.Stderr, "keys: %s\n", strings.Join(names, ", "))
 	if editor == nil {
 		opener := "xdg-open"
 		args := []string{path}
@@ -257,7 +261,18 @@ func openConfig(editor []string, restart func(oldDataDir string) error) error {
 		return err
 	}
 	for _, k := range configKeys {
-		if k.serverSide && *k.field(&before) != *k.field(&after) {
+		if !k.serverSide {
+			continue
+		}
+		was, _, err := before.value(k)
+		if err != nil {
+			return err
+		}
+		now, _, err := after.value(k)
+		if err != nil {
+			return err
+		}
+		if was != now {
 			return restart(oldDataDir)
 		}
 	}
@@ -279,9 +294,9 @@ func showConfig(w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		source := "default"
-		if fromFile {
-			source = "config"
+		source := "config"
+		if def, err := k.def(c); !fromFile || (err == nil && v == def) {
+			source = "default"
 		}
 		_, _ = fmt.Fprintf(w, "%-12s %-40s (%s)\n", k.name, v, source)
 	}

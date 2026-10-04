@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -288,5 +289,84 @@ func TestEditorCommandPrefersVisual(t *testing.T) {
 	t.Setenv("EDITOR", "")
 	if got := editorCommand(); got != nil {
 		t.Errorf("editorCommand() = %v, want nil so the GUI fallback is used", got)
+	}
+}
+
+// The file must document every key with its default, so `config open` shows what can be changed.
+func TestSavedConfigListsEveryKeyWithDefaults(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_STATE_HOME", "/tmp/state")
+	if err := saveConfig(config{}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "sharefly", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"public_url": "", "server": "",
+		"data_dir": "/tmp/state/sharefly", "api_addr": "127.0.0.1:8787", "public_addr": "127.0.0.1:8080", "ttl": "7d",
+	}
+	if len(raw) != len(want) {
+		t.Errorf("file has %d keys, want %d: %s", len(raw), len(want), data)
+	}
+	for k, v := range want {
+		if got, ok := raw[k]; !ok || got != v {
+			t.Errorf("%s = %q (present %v), want %q", k, got, ok, v)
+		}
+	}
+}
+
+// Writing the derived default into the file would pin `server` to 127.0.0.1: a host that later sets api_addr
+// to its tailnet IP would then talk to (and auto-start) a second, conflicting local server.
+func TestDerivedKeysKeepFollowingAfterSave(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveConfig(config{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setConfig("api-addr", "100.64.0.1:8787", func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := setConfig("public-addr", "127.0.0.1:9090", func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := c.value(serverKey); got != "http://100.64.0.1:8787" {
+		t.Errorf("server = %q, want it to follow api_addr", got)
+	}
+	if got, _, _ := c.value(configKeys[0]); got != "http://127.0.0.1:9090" {
+		t.Errorf("public_url = %q, want it to follow public_addr", got)
+	}
+}
+
+// An existing `{}` must be filled in when opened, and filling in defaults is not a change that restarts the server.
+func TestOpenConfigFillsExistingEmptyFileWithoutRestart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "sharefly", "config.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	restart := func(string) error { t.Fatal("unchanged effective values must not restart"); return nil }
+	if err := openConfig([]string{"true"}, restart); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"api_addr": "127.0.0.1:8787"`) {
+		t.Errorf("file not filled with defaults:\n%s", data)
 	}
 }
