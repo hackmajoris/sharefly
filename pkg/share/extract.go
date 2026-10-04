@@ -23,7 +23,7 @@ func Extract(r io.Reader, dst string, maxBytes int64) (size int64, err error) {
 	if err != nil {
 		return 0, err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return 0, err
 	}

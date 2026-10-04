@@ -117,7 +117,7 @@ func connCounter(t *testing.T) (*Client, func() int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	accepted := make(chan string, 16)
 	go func() {
 		for {
@@ -126,7 +126,7 @@ func connCounter(t *testing.T) (*Client, func() int) {
 				return
 			}
 			accepted <- conn.RemoteAddr().String()
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 	count := func() int {
@@ -134,7 +134,7 @@ func connCounter(t *testing.T) (*Client, func() int) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		probe.Close()
+		_ = probe.Close()
 		n := 0
 		for {
 			select {
@@ -228,7 +228,7 @@ func TestClientUnreachable(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := "http://" + ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	c := &Client{BaseURL: addr}
 	f := filepath.Join(t.TempDir(), "x.html")
@@ -262,7 +262,7 @@ func TestClientNonJSONResponses(t *testing.T) {
 			http.Error(w, "bad gateway", http.StatusBadGateway)
 			return
 		}
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	t.Cleanup(ts.Close)
 	c := &Client{BaseURL: ts.URL}

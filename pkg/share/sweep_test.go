@@ -81,7 +81,7 @@ func TestSweepKeepsRecordWhenDirRemovalFails(t *testing.T) {
 	if err := os.Chmod(sharesDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(sharesDir, 0o755) })
 
 	if err := Sweep(s, sharesDir, now); err == nil {
 		t.Fatal("Sweep() error = nil, want removal error")
@@ -154,7 +154,7 @@ func TestSweepContinuesPastFailedShare(t *testing.T) {
 	if err := os.Chmod(stuck, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(stuck, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(stuck, 0o755) })
 
 	if err := Sweep(s, sharesDir, now); err == nil {
 		t.Fatal("Sweep() error = nil, want removal error")

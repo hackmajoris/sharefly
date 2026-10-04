@@ -48,16 +48,16 @@ func (c *Client) Upload(path, ttl string) (sh share.Link, skipped []string, err 
 	q := url.Values{"ttl": {ttl}, "name": {filepath.Base(abs)}}
 	req, err := http.NewRequest(http.MethodPost, c.endpoint("/shares?"+q.Encode()), pr)
 	if err != nil {
-		pr.Close()
+		_ = pr.Close()
 		<-done
 		return sh, nil, err
 	}
 	req.Header.Set("Content-Type", "application/gzip")
 	resp, err := uploadClient.Do(req)
-	pr.Close()
+	_ = pr.Close()
 	if archErr := <-done; archErr != nil && !errors.Is(archErr, io.ErrClosedPipe) {
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		return sh, nil, archErr
 	}
@@ -97,7 +97,7 @@ func (c *Client) handle(resp *http.Response, err error, want int, out any) error
 	if err != nil {
 		return fmt.Errorf("can't reach sharefly server at %s (tailscale up? server running?): %w", c.BaseURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != want {
 		var apiErr struct {
 			Error string `json:"error"`

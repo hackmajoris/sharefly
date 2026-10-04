@@ -36,7 +36,7 @@ fmt:
 plist:
 	plutil -lint deploy/com.sharefly.server.plist
 
-check: vet plist test
+check: vet lint plist test
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "run make fmt" && exit 1)
 
 run: build

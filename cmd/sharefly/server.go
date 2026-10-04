@@ -83,13 +83,13 @@ func runServer(args []string) error {
 	}
 	publicLn, err := net.Listen("tcp", cfg.publicAddr)
 	if err != nil {
-		apiLn.Close()
+		_ = apiLn.Close()
 		return err
 	}
 
 	if err := share.Reconcile(store, sharesDir, tmpDir); err != nil {
-		apiLn.Close()
-		publicLn.Close()
+		_ = apiLn.Close()
+		_ = publicLn.Close()
 		return fmt.Errorf("reconcile: %w", err)
 	}
 	if err := share.Sweep(store, sharesDir, time.Now()); err != nil {

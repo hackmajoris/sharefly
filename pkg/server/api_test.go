@@ -259,7 +259,7 @@ func TestAPIDeleteKeepsRecordWhenDirRemovalFails(t *testing.T) {
 	if err := os.Chmod(sharesDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(sharesDir, 0o755) })
 
 	rec := do(t, a, http.MethodDelete, "/shares/"+up.ID, nil)
 	if rec.Code != http.StatusInternalServerError {
@@ -301,7 +301,7 @@ func TestAPIUploadDropsRecordWhenPublishFails(t *testing.T) {
 	if err := os.Chmod(sharesDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(sharesDir, 0o755) })
 
 	rec := do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x")))
 	if rec.Code != http.StatusInternalServerError {
@@ -322,7 +322,7 @@ func TestAPIUploadFilesystemErrorIs500WithoutPaths(t *testing.T) {
 	if err := os.Chmod(tmpDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(tmpDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(tmpDir, 0o755) })
 
 	rec := do(t, a, http.MethodPost, "/shares", tarGz(t, regular("index.html", "x")))
 	if rec.Code != http.StatusInternalServerError {

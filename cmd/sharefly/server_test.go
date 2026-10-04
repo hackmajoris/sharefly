@@ -70,7 +70,7 @@ func freeAddr(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	return ln.Addr().String()
 }
 
@@ -112,7 +112,7 @@ func TestRunServerBindFailureLeavesDataUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer busy.Close()
+	defer func() { _ = busy.Close() }()
 	err = runServer([]string{"--api-addr", freeAddr(t), "--public-addr", busy.Addr().String(),
 		"--public-url", "https://s", "--data-dir", dir})
 	if err == nil {
@@ -157,7 +157,7 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if len(list) != 1 || list[0].ID != "live" {
 		t.Errorf("shares after startup = %+v, want only live", list)
 	}
@@ -169,7 +169,7 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	if resp, err := http.Get("http://" + publicAddr + "/live/"); err != nil || resp.StatusCode != http.StatusOK {
 		t.Errorf("public listener not serving live share: %v %v", resp, err)
 	} else {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
@@ -196,7 +196,7 @@ func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
 	if err := os.Chmod(sharesDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(sharesDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(sharesDir, 0o755) })
 	publicAddr := freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
@@ -209,12 +209,12 @@ func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
 			t.Fatal("runServer must return an error when reconcile fails")
 		}
 	case <-time.After(5 * time.Second):
-		syscall.Kill(os.Getpid(), syscall.SIGINT)
+		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
 		<-done
 		t.Fatal("runServer kept serving with an orphan it could not remove")
 	}
 	if resp, err := http.Get("http://" + publicAddr + "/orphan/"); err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("public listener still reachable after failed reconcile: %d", resp.StatusCode)
 	}
 }

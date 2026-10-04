@@ -92,7 +92,7 @@ func addFile(tw *tar.Writer, path, name string, fi fs.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	hdr := &tar.Header{
 		Name:     name,
 		Typeflag: tar.TypeReg,

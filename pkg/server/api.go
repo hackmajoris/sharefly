@@ -55,7 +55,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmp := filepath.Join(a.TmpDir(), id)
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	body := http.MaxBytesReader(w, r.Body, a.MaxBytes)
 	size, err := share.Extract(body, tmp, a.MaxBytes)
@@ -186,5 +186,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("write response: %v", err)
+	}
 }

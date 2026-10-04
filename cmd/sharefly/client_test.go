@@ -50,10 +50,13 @@ func TestParseClientArgsDefaultsAndArity(t *testing.T) {
 func TestPrintShares(t *testing.T) {
 	exp := time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
 	var buf bytes.Buffer
-	printShares(&buf, []share.Link{
+	err := printShares(&buf, []share.Link{
 		{Share: share.Share{ID: "aaaaaaaaaa", Name: "a.html", ExpiresAt: &exp}, URL: "https://s/aaaaaaaaaa/a.html"},
 		{Share: share.Share{ID: "bbbbbbbbbb", Name: "site"}, URL: "https://s/bbbbbbbbbb/"},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	if len(lines) != 3 {
 		t.Fatalf("got %d lines, want header + 2:\n%s", len(lines), buf.String())

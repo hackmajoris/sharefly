@@ -17,12 +17,12 @@ func (n noListingFS) Open(name string) (http.File, error) {
 	}
 	info, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	if info.IsDir() {
 		if !isRegularFile(n.fs, path.Join(name, "index.html")) {
-			f.Close()
+			_ = f.Close()
 			return nil, fs.ErrNotExist
 		}
 	}
@@ -34,7 +34,7 @@ func isRegularFile(fsys http.FileSystem, name string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	return err == nil && info.Mode().IsRegular()
 }

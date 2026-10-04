@@ -73,21 +73,20 @@ func runList(args []string) error {
 	if err != nil {
 		return err
 	}
-	printShares(os.Stdout, shares)
-	return nil
+	return printShares(os.Stdout, shares)
 }
 
-func printShares(w io.Writer, shares []share.Link) {
+func printShares(w io.Writer, shares []share.Link) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tEXPIRES\tURL")
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tEXPIRES\tURL")
 	for _, sh := range shares {
 		exp := "never"
 		if sh.ExpiresAt != nil {
 			exp = sh.ExpiresAt.Local().Format(time.DateTime)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", sh.ID, sh.Name, exp, sh.URL)
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", sh.ID, sh.Name, exp, sh.URL)
 	}
-	tw.Flush()
+	return tw.Flush()
 }
 
 func runRm(args []string) error {
@@ -108,6 +107,5 @@ func runRenew(args []string) error {
 	if err != nil {
 		return err
 	}
-	printShares(os.Stdout, []share.Link{sh})
-	return nil
+	return printShares(os.Stdout, []share.Link{sh})
 }
