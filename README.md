@@ -1,6 +1,6 @@
 # sharefly
 
-Share a static HTML file or folder via a link. Runs locally with zero config; add a Cloudflare Tunnel to make links public, or run it on an always-on server and share from any device on your tailnet.
+Share a static HTML file or folder via a link, straight from your terminal.
 
 ```
 $ sharefly serve report.html
@@ -8,32 +8,13 @@ started local sharefly server (pid 4242, log ~/.local/state/sharefly/server.log)
 http://127.0.0.1:8080/k7f3x9qa2m/report.html
 ```
 
-One binary. `serve` starts a local server in the background when none is running; `sharefly stop` stops it. Standard library only.
+Works locally with zero config. Add a Cloudflare Tunnel and the links work for anyone on the internet. Run it on an always-on machine and you can share from any device on your tailnet.
 
-## Quick start
-
-1. **Local only:** `sharefly serve report.html`. That's it; the link works on this machine.
-2. **Public:** run cloudflared on the same machine with a public hostname pointing at `http://127.0.0.1:8080`, and set `export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com` (e.g. in `~/.zshrc`) so links use it. Run `sharefly stop` once so the next `serve` restarts the server with the new URL.
-3. **Always-on server:** run `sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com` under launchd on an always-on machine (see [Always-on server setup](#always-on-server-setup)), and set `SHAREFLY_SERVER=http://<server>:8787` on your other devices.
-
-## Architecture
-
-```
-client device                          always-on server
-sharefly serve x.html ──tailnet──▶ sharefly start
-                                   ├─ API    <tailscale-ip>:8787  (tailnet only)
-                                   ├─ files  127.0.0.1:8080       (no dir listing,
-                                   │                               Cache-Control: private, no-store)
-                                   └─ <data-dir>/{shares/, tmp/, shares.json}
-                cloudflared service (token) ──▶ 127.0.0.1:8080
-                https://share.yourdomain.com/<id>/
-```
-
-- In the always-on server setup the management API listens only on the tailnet address (by default it binds `127.0.0.1`). The file server binds to loopback and is reached only through cloudflared.
-- Each share gets a random 10-char ID. The unguessable link is the only access control on the public side.
-- Expired shares are swept at startup and every 5 minutes, so an expired share can stay reachable for up to 5 minutes.
-- At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. If that cleanup fails, the server exits with an error instead of serving (launchd retries). Don't put files there by hand.
-- sharefly never talks to cloudflared or the Cloudflare API. The tunnel is configured in the Cloudflare dashboard.
+- [Install](#install)
+- [Cookbook](#cookbook): copy-paste recipes for common tasks
+- [Reference](#reference): commands, environment, server flags, HTTP API
+- [Always-on server setup](#always-on-server-setup)
+- [Good to know](#good-to-know)
 
 ## Install
 
@@ -41,71 +22,138 @@ sharefly serve x.html ──tailnet──▶ sharefly start
 brew install --cask hackmajoris/apps/sharefly
 ```
 
-Install it on the server and on each client. The binary lands in `$(brew --prefix)/bin/sharefly`: `/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel. Upgrade with `brew upgrade --cask sharefly`.
+Upgrade with `brew upgrade --cask sharefly`. From source (Go 1.27.1+): `make build`, which puts the binary in `.bin/sharefly`.
 
-From source (Go 1.27.1+):
+## Cookbook
 
-```
-go build -o sharefly ./cmd/sharefly
-```
-
-## Release
-
-Push a `v*` tag. The release workflow runs GoReleaser, which publishes the GitHub release and updates the cask in `hackmajoris/homebrew-apps`. It needs a `GORELEASER_GITHUB_TOKEN` secret with write access to both repos.
-
-## Client usage
+### Share a single page
 
 ```
-sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the URL (auto-starts a local server)
+sharefly serve report.html
+```
+
+The first `serve` starts a background server for you. The command prints only the link, so it's easy to script.
+
+### Share a whole site
+
+```
+sharefly serve ./site
+```
+
+The folder needs an `index.html` at its root. Links in your HTML must be relative (`style.css`, not `/style.css`), because every share lives under its own `/<id>/` path.
+
+### Pick how long a link lives
+
+```
+sharefly serve report.html --ttl 1h      # minutes: 30m, hours: 1h, days: 3d
+sharefly serve report.html --ttl never   # until you delete it
+```
+
+The default is 7 days. Expired links disappear within 5 minutes.
+
+### See, extend and delete links
+
+```
+sharefly ls                        # ID, name, expiry and URL of every share
+sharefly renew k7f3x9qa2m --ttl 7d # expire 7 days from now
+sharefly rm k7f3x9qa2m             # gone immediately
+```
+
+### Copy the link or open it right away
+
+```
+sharefly serve report.html | pbcopy          # link on the clipboard
+open "$(sharefly serve report.html)"         # open it in your browser
+```
+
+### Make links public with a Cloudflare Tunnel
+
+You need a domain on Cloudflare.
+
+1. In the Cloudflare dashboard, go to Zero Trust → Networks → Tunnels and create a tunnel. Add a public hostname, e.g. `share.yourdomain.com`, with service `HTTP` and URL `127.0.0.1:8080`. Leave Path empty.
+2. On the machine that runs sharefly, install the connector with the token the dashboard shows. The token is a secret.
+   ```
+   brew install cloudflared
+   sudo cloudflared service install <TOKEN>
+   ```
+3. Tell sharefly to build links with your domain, then restart its server:
+   ```
+   echo 'export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com' >> ~/.zshrc
+   source ~/.zshrc
+   sharefly stop
+   sharefly serve report.html     # → https://share.yourdomain.com/<id>/report.html
+   ```
+
+### Share from any device (always-on server)
+
+A local server stops when its machine sleeps. For links that stay up, run sharefly on an always-on machine on your tailnet.
+
+1. Set up the server once: see [Always-on server setup](#always-on-server-setup).
+2. On every other device, install sharefly and point it at the server:
+   ```
+   echo 'export SHAREFLY_SERVER=http://<server>:8787' >> ~/.zshrc
+   ```
+3. `sharefly serve`, `ls`, `rm` and `renew` now work against the server. It never auto-starts a remote server.
+
+### Stop the local server
+
+```
+sharefly stop
+```
+
+The next `serve` starts it again.
+
+### Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| `can't reach sharefly server at ...` | For a remote server: check `tailscale status` and that the server is running. `SHAREFLY_SERVER` must include `http://`. |
+| `local server did not come up` | Read the log: `tail ~/.local/state/sharefly/server.log`. Usually ports 8787 or 8080 are taken: `lsof -iTCP:8787 -iTCP:8080 -sTCP:LISTEN`. |
+| `a sharefly server is answering ... but has no pid file` | A server started by an older version or with another `--data-dir` is still running. Stop it with the `kill` command from the message. |
+| Public link shows Cloudflare 502 | cloudflared can't reach the file server. sharefly must run on the same machine as cloudflared. |
+| Public link shows `404 page not found` | The share expired or was deleted. Check `sharefly ls`. |
+| Links still show `127.0.0.1` after setting `SHAREFLY_PUBLIC_URL` | Run `sharefly stop`; the server reads the variable only when it starts. |
+
+## Reference
+
+### Commands
+
+```
+sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the URL
 sharefly ls [--server URL]                               # table: ID NAME EXPIRES URL
 sharefly rm <id> [--server URL]                          # delete a share, prints nothing
 sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now, prints the row
+sharefly start [flags]                                   # run the server in the foreground
 sharefly stop [--data-dir DIR]                           # stop the local server
 ```
 
-- `--ttl`: `Nd` (days), `Nh` (hours), `Nm` (minutes), N a positive integer, or `never`. Default `7d`.
-- Server address: `--server` flag, else `SHAREFLY_SERVER` env, else `http://127.0.0.1:8787` (this machine). It must be a full URL with scheme (`http://host:8787`, not `host:8787`).
-- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logging to `~/.local/state/sharefly/server.log`, and waits up to 5s for it. Remote servers are never started; their connection errors are reported as-is. `ls`, `rm` and `renew` don't auto-start.
-- The local server lives as long as the machine stays awake; on a laptop, closing the lid stops the links and the expiry sweep. Use the always-on server setup for links that stay up.
+- `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
-- A folder must contain `index.html` at its root; the URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
+- A folder's URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
+- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits up to 5s. `ls`, `rm` and `renew` never auto-start.
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.
 
-## Environment
+### Environment
 
 | Variable | Used by | Default | |
 |---|---|---|---|
-| `SHAREFLY_SERVER` | `serve`, `ls`, `rm`, `renew`, `stop` | `http://127.0.0.1:8787` | server API URL; `--server` overrides it |
-| `SHAREFLY_PUBLIC_URL` | `start` (including the auto-started server) | `http://<public-addr>` | base URL for share links; `--public-url` overrides it |
+| `SHAREFLY_SERVER` | `serve`, `ls`, `rm`, `renew`, `stop` | `http://127.0.0.1:8787` | server API URL, with scheme; `--server` overrides it |
+| `SHAREFLY_PUBLIC_URL` | `start`, including the auto-started server | `http://<public-addr>` | base URL for share links; `--public-url` overrides it |
 | `XDG_STATE_HOME` | `start`, `stop`, auto-start | `~/.local/state` | data lives in `$XDG_STATE_HOME/sharefly`; `--data-dir` overrides it |
 
-Put them in your shell profile, e.g.:
+### Server flags
 
-```
-export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com   # links go through your Cloudflare Tunnel
-export SHAREFLY_SERVER=http://<server>:8787               # only when using a remote server
-```
-
-The auto-started server reads `SHAREFLY_PUBLIC_URL` when it starts, so run `sharefly stop` after changing it.
-
-## Server
-
-```
-sharefly start                                                                       # local, zero config
-sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com  # always-on server
-```
-
-Runs in the foreground until Ctrl-C or SIGTERM. `server` is an alias for `start`. While running it writes `<data-dir>/server.pid`, which `sharefly stop` uses.
+`sharefly start` runs in the foreground until Ctrl-C or SIGTERM. `server` is an alias. While running it writes `<data-dir>/server.pid`, which `stop` uses.
 
 | Flag | Default | |
 |---|---|---|
 | `--api-addr` | `127.0.0.1:8787` | management API listen address; use the tailnet IP to accept other devices |
 | `--public-url` | `$SHAREFLY_PUBLIC_URL`, else `http://<public-addr>` | base URL used to build share links |
-| `--public-addr` | `127.0.0.1:8080` | public file server listen address |
+| `--public-addr` | `127.0.0.1:8080` | file server listen address (what cloudflared points at) |
 | `--data-dir` | `$XDG_STATE_HOME/sharefly`, else `~/.local/state/sharefly` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.log` |
 
-## API
+### HTTP API
 
 The management API on `--api-addr` is plain HTTP + JSON. The CLI uses it; any other client can too.
 
@@ -122,32 +170,51 @@ The archive may hold only regular files and directories with relative paths, at 
 
 ## Always-on server setup
 
-1. **Tunnel.** Cloudflare dashboard: Zero Trust → Networks → Tunnels → create a tunnel. Add a public hostname `share.yourdomain.com` → `http://127.0.0.1:8080`. Copy the tunnel token. The token is a secret: anyone holding it can run your tunnel.
-2. **cloudflared.**
-   ```
-   brew install cloudflared
-   sudo cloudflared service install <TOKEN>
-   ```
-3. **Binary.** `brew install --cask hackmajoris/apps/sharefly` (see above).
-4. **Data dir.** Create it as `YOUR_USER` (not with `sudo`) before loading the plist. launchd does not create the log file's parent directory, and the server, which runs as `YOUR_USER`, must be able to write it.
+For macOS, run as a LaunchDaemon so it starts at boot.
+
+1. **Tunnel.** Do steps 1–2 of [Make links public](#make-links-public-with-a-cloudflare-tunnel) on this machine.
+2. **Binary.** `brew install --cask hackmajoris/apps/sharefly`.
+3. **Data dir.** Create it as your normal user, not with `sudo`. launchd won't create the log file's folder, and the server runs as your user.
    ```
    mkdir -p ~/.local/state/sharefly
    ```
-5. **Plist.** Edit `deploy/com.sharefly.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/opt/homebrew/bin/sharefly` (Intel: `/usr/local/bin/sharefly`). After `brew upgrade --cask sharefly`, restart with `sudo launchctl kickstart -k system/com.sharefly.server`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/.local/state/sharefly/server.log`) or add a `newsyslog` rule.
+4. **Plist.** Edit `deploy/com.sharefly.server.plist` and replace:
+   - `YOUR_USER` (4 places) with your username (`whoami`)
+   - `TAILSCALE_IP` with the output of `tailscale ip -4`
+   - `https://share.yourdomain.com` with your public hostname
+   - the binary path if not `/opt/homebrew/bin/sharefly` (Intel: `/usr/local/bin/sharefly`)
+
+   Then load it:
    ```
    sudo cp deploy/com.sharefly.server.plist /Library/LaunchDaemons/
    sudo chown root:wheel /Library/LaunchDaemons/com.sharefly.server.plist
    sudo launchctl bootstrap system /Library/LaunchDaemons/com.sharefly.server.plist
+   tail -f ~/.local/state/sharefly/server.log
    ```
-   It runs as a LaunchDaemon so it starts at boot without a login, but it can only bind `--api-addr` once the tailnet IP exists. The Tailscale GUI app connects only after a user logs in, so until then launchd keeps retrying and the public listener is down too. For a true headless boot, run Tailscale as a system daemon (`brew install tailscale`, `sudo tailscaled install-system-daemon`, `tailscale up`) or enable auto-login. To reload after edits: `sudo launchctl bootout system/com.sharefly.server`, then bootstrap again.
-6. **No sleep.** System Settings → Energy → prevent automatic sleeping.
+5. **No sleep.** System Settings → Energy → prevent automatic sleeping.
+6. **Headless boot.** The server can only listen on the tailnet IP once Tailscale is connected. The Tailscale GUI app connects only after a user logs in, so either run Tailscale as a system daemon (`brew install tailscale && sudo tailscaled install-system-daemon && sudo tailscale up`) or enable auto-login.
 
-## Caveats
+Maintenance:
+- After `brew upgrade --cask sharefly`: `sudo launchctl kickstart -k system/com.sharefly.server`
+- After editing the plist: `sudo launchctl bootout system/com.sharefly.server`, then bootstrap again.
+- `server.log` is never rotated: truncate it now and then (`: > ~/.local/state/sharefly/server.log`) or add a `newsyslog` rule.
 
-- Use relative links in shared HTML. Shares live under `/<id>/`, so absolute paths like `/style.css` break.
-- Empty folders are not uploaded.
-- Inside a folder, symlinks (including symlinked subfolders, skipped whole) and other non-regular files are skipped with a warning. A symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed. `.git` (directory or worktree/submodule file) and `.DS_Store` are skipped.
-- The tailnet is the API's auth. Anyone on your tailnet can create and delete shares.
-- Upload limit is 100MB (compressed and uncompressed).
-- Default TTL is 7 days. Use `--ttl never` to keep a share until `rm`.
-- Responses carry `Cache-Control: private, no-store` so Cloudflare never serves cached copies: `rm` takes effect immediately, expiry at the next sweep (within 5 minutes).
+## Good to know
+
+- **Access:** each share gets a random 10-character ID. The unguessable link is the only access control. Anyone on your tailnet can create and delete shares on an always-on server.
+- **Expiry:** expired shares are swept at startup and every 5 minutes. `rm` takes effect immediately; responses carry `Cache-Control: private, no-store`, so Cloudflare never serves stale copies.
+- **Limits:** 100MB per upload (compressed and uncompressed), 10000 files.
+- **What gets uploaded:** empty folders aren't. `.git` and `.DS_Store` are skipped. Inside a folder, symlinks and other non-regular files are skipped with a warning, and a symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed.
+- **Data folder:** at startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. Don't put files there by hand.
+- **Network:** the file server binds `127.0.0.1` and is reached publicly only through cloudflared. sharefly never talks to cloudflared or the Cloudflare API.
+
+## Development
+
+```
+make            # test + build
+make check      # vet, lint, plist lint, tests, gofmt check
+make run        # local server with data in .bin/data
+make install    # symlink .bin/sharefly into /usr/local/bin
+```
+
+To release, push a `v*` tag. The release workflow runs GoReleaser, which publishes the GitHub release and updates the cask in `hackmajoris/homebrew-apps`. It needs a `GORELEASER_GITHUB_TOKEN` secret with write access to both repos.

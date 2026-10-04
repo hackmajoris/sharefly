@@ -40,7 +40,7 @@ check: vet lint plist test
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "run make fmt" && exit 1)
 
 run: build
-	.bin/sharefly server --api-addr 127.0.0.1:8787 --public-url http://127.0.0.1:8080 --data-dir .bin/data
+	.bin/sharefly start --data-dir .bin/data
 
 clean:
 	rm -rf .bin dist
