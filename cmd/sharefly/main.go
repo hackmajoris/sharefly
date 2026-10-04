@@ -14,7 +14,8 @@ commands:
   ls        list shares
   rm        delete a share: rm <id>
   renew     extend a share: renew <id> [--ttl 7d]
-  start     run the share server in the foreground (serve starts one automatically)
+  start     start the share server in the background (serve does this automatically)
+  server    run the share server in the foreground (for Docker, launchd, systemd)
   stop      stop the local share server
 `
 
@@ -29,8 +30,10 @@ func run(args []string) int {
 	}
 	var err error
 	switch args[0] {
-	case "start", "server":
+	case "start":
 		err = runStart(args[1:])
+	case "server":
+		err = runServer(args[1:])
 	case "stop":
 		err = runStop(args[1:])
 	case "serve":

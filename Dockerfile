@@ -9,4 +9,4 @@ COPY --from=build --chown=nonroot:nonroot /data /data
 VOLUME /data
 EXPOSE 8787 8080
 ENTRYPOINT ["/sharefly"]
-CMD ["start", "--api-addr", "0.0.0.0:8787", "--public-addr", "0.0.0.0:8080", "--data-dir", "/data"]
+CMD ["server", "--api-addr", "0.0.0.0:8787", "--public-addr", "0.0.0.0:8080", "--data-dir", "/data"]

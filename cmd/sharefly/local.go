@@ -40,6 +40,10 @@ func ensureLocalServer(c *client.Client, spawn func(apiAddr string) error, wait 
 	if err := spawn(addr); err != nil {
 		return fmt.Errorf("start local server: %w", err)
 	}
+	return waitReady(c, wait, logPath())
+}
+
+func waitReady(c *client.Client, wait time.Duration, logFile string) error {
 	deadline := time.Now().Add(wait)
 	for {
 		_, err := c.List()
@@ -47,10 +51,48 @@ func ensureLocalServer(c *client.Client, spawn func(apiAddr string) error, wait 
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("local server did not come up within %s, see %s: %w", wait, logPath(), err)
+			return fmt.Errorf("server did not come up within %s, see %s: %w", wait, logFile, err)
 		}
 		time.Sleep(pollInterval)
 	}
+}
+
+func runStart(args []string) error {
+	cfg, err := parseServerFlags(args)
+	if err != nil {
+		return err
+	}
+	return startBackground(cfg, args, spawnServer, startWait)
+}
+
+// startBackground launches `sharefly server` with the same flags as a detached process and returns once it answers.
+func startBackground(cfg serverConfig, args []string, spawn func(args []string, dataDir string) (int, string, error), wait time.Duration) error {
+	c := &client.Client{BaseURL: "http://" + dialAddr(cfg.apiAddr)}
+	if _, err := c.List(); !errors.Is(err, client.ErrUnreachable) {
+		fmt.Printf("sharefly server already running on %s\n", cfg.apiAddr)
+		return nil
+	}
+	pid, logFile, err := spawn(args, cfg.dataDir)
+	if err != nil {
+		return err
+	}
+	if err := waitReady(c, wait, logFile); err != nil {
+		return err
+	}
+	fmt.Printf("sharefly server running (pid %d, api %s, links %s, log %s)\n", pid, cfg.apiAddr, cfg.publicURL, logFile)
+	return nil
+}
+
+// dialAddr turns a wildcard listen address into one a client on this machine can connect to.
+func dialAddr(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }
 
 func localAPIAddr(baseURL string) (string, bool) {
@@ -79,30 +121,40 @@ func logPath() string {
 }
 
 func spawnLocalServer(apiAddr string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
 	dir, err := defaultDataDir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	logf, err := os.OpenFile(filepath.Join(dir, logFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	pid, logFile, err := spawnServer([]string{"--api-addr", apiAddr}, dir)
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "started local sharefly server (pid %d, log %s)\n", pid, logFile)
+	return nil
+}
+
+// spawnServer runs `sharefly server <args>` detached from the terminal, logging to <dataDir>/server.log.
+func spawnServer(args []string, dataDir string) (int, string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return 0, "", err
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return 0, "", err
+	}
+	logf, err := os.OpenFile(filepath.Join(dataDir, logFileName), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, "", err
+	}
 	defer func() { _ = logf.Close() }()
-	cmd := exec.Command(exe, "start", "--api-addr", apiAddr)
+	cmd := exec.Command(exe, append([]string{"server"}, args...)...)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return err
+		return 0, "", err
 	}
-	fmt.Fprintf(os.Stderr, "started local sharefly server (pid %d, log %s)\n", cmd.Process.Pid, logf.Name())
-	return cmd.Process.Release()
+	pid := cmd.Process.Pid
+	return pid, logf.Name(), cmd.Process.Release()
 }
 
 func runStop(args []string) error {

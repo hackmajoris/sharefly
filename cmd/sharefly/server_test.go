@@ -153,7 +153,7 @@ func TestRunServerBindFailureLeavesDataUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = busy.Close() }()
-	err = runStart([]string{"--api-addr", freeAddr(t), "--public-addr", busy.Addr().String(),
+	err = runServer([]string{"--api-addr", freeAddr(t), "--public-addr", busy.Addr().String(),
 		"--public-url", "https://s", "--data-dir", dir})
 	if err == nil {
 		t.Fatal("public bind failure must return an error")
@@ -172,7 +172,7 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	apiAddr, publicAddr := freeAddr(t), freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- runStart([]string{"--api-addr", apiAddr, "--public-addr", publicAddr,
+		done <- runServer([]string{"--api-addr", apiAddr, "--public-addr", publicAddr,
 			"--public-url", "https://s", "--data-dir", dir})
 	}()
 
@@ -246,7 +246,7 @@ func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
 	publicAddr := freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- runStart([]string{"--api-addr", freeAddr(t), "--public-addr", publicAddr,
+		done <- runServer([]string{"--api-addr", freeAddr(t), "--public-addr", publicAddr,
 			"--public-url", "https://s", "--data-dir", dir})
 	}()
 	select {
@@ -267,7 +267,7 @@ func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
 
 func TestRunServerBindFailure(t *testing.T) {
 	dir := t.TempDir()
-	err := runStart([]string{"--api-addr", "256.0.0.1:1", "--public-url", "https://s", "--data-dir", dir})
+	err := runServer([]string{"--api-addr", "256.0.0.1:1", "--public-url", "https://s", "--data-dir", dir})
 	if err == nil {
 		t.Fatal("bind failure must return an error so the process exits non-zero and launchd retries")
 	}

@@ -169,3 +169,78 @@ func TestStopServerTerminatesProcess(t *testing.T) {
 		t.Errorf("process state %v, want terminated by SIGTERM", cmd.ProcessState)
 	}
 }
+
+func TestDialAddr(t *testing.T) {
+	tests := map[string]string{
+		"0.0.0.0:8787":    "127.0.0.1:8787",
+		"[::]:8787":       "127.0.0.1:8787",
+		":8787":           "127.0.0.1:8787",
+		"100.64.0.1:8787": "100.64.0.1:8787",
+		"127.0.0.1:8787":  "127.0.0.1:8787",
+	}
+	for in, want := range tests {
+		if got := dialAddr(in); got != want {
+			t.Errorf("dialAddr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// `start` must hand the user's flags to the background server unchanged, and return only once it answers.
+func TestStartBackgroundSpawnsServerWithSameFlags(t *testing.T) {
+	addr := freeAddr(t)
+	args := []string{"--api-addr", addr, "--public-url", "https://s.example.com"}
+	cfg, err := parseServerFlags(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotArgs []string
+	spawn := func(a []string, dataDir string) (int, string, error) {
+		gotArgs = a
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return 0, "", err
+		}
+		srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
+		go func() { _ = srv.Serve(ln) }()
+		t.Cleanup(func() { _ = srv.Close() })
+		return 4242, filepath.Join(dataDir, logFileName), nil
+	}
+	if err := startBackground(cfg, args, spawn, 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(gotArgs, " ") != strings.Join(args, " ") {
+		t.Errorf("spawned with %v, want %v", gotArgs, args)
+	}
+}
+
+// A second `start` must not launch a competing server that would only fail to bind.
+func TestStartBackgroundAlreadyRunning(t *testing.T) {
+	addr := freeAddr(t)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	cfg, err := parseServerFlags([]string{"--api-addr", addr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spawn := func([]string, string) (int, string, error) { t.Fatal("must not spawn"); return 0, "", nil }
+	if err := startBackground(cfg, nil, spawn, time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStartBackgroundFailsWhenServerNeverAnswers(t *testing.T) {
+	cfg, err := parseServerFlags([]string{"--api-addr", freeAddr(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spawn := func([]string, string) (int, string, error) { return 1, "server.log", nil }
+	err = startBackground(cfg, nil, spawn, 300*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "did not come up") {
+		t.Fatalf("err = %v, want did not come up", err)
+	}
+}

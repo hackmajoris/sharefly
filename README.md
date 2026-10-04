@@ -95,13 +95,15 @@ A local server stops when its machine sleeps. For links that stay up, run sharef
    ```
 3. `sharefly serve`, `ls`, `rm` and `renew` now work against the server. It never auto-starts a remote server.
 
-### Stop the local server
+### Start and stop the server yourself
 
 ```
+sharefly start                                        # background; returns once it answers
+sharefly start --public-url https://share.example.com # with flags, e.g. a public URL
 sharefly stop
 ```
 
-The next `serve` starts it again.
+You rarely need `start`: `serve` starts the server when none is running. Use `sharefly server` instead to keep it in the foreground and watch its log.
 
 ### Troubleshooting
 
@@ -123,14 +125,15 @@ sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only th
 sharefly ls [--server URL]                               # table: ID NAME EXPIRES URL
 sharefly rm <id> [--server URL]                          # delete a share, prints nothing
 sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now, prints the row
-sharefly start [flags]                                   # run the server in the foreground
+sharefly start [flags]                                   # start the server in the background
+sharefly server [flags]                                  # run the server in the foreground
 sharefly stop [--data-dir DIR]                           # stop the local server
 ```
 
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
 - A folder's URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
-- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits up to 5s. `ls`, `rm` and `renew` never auto-start.
+- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly server --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits up to 5s. `ls`, `rm` and `renew` never auto-start.
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.
 
@@ -139,12 +142,12 @@ sharefly stop [--data-dir DIR]                           # stop the local server
 | Variable | Used by | Default | |
 |---|---|---|---|
 | `SHAREFLY_SERVER` | `serve`, `ls`, `rm`, `renew`, `stop` | `http://127.0.0.1:8787` | server API URL, with scheme; `--server` overrides it |
-| `SHAREFLY_PUBLIC_URL` | `start`, including the auto-started server | `http://<public-addr>` | base URL for share links; `--public-url` overrides it |
-| `XDG_STATE_HOME` | `start`, `stop`, auto-start | `~/.local/state` | data lives in `$XDG_STATE_HOME/sharefly`; `--data-dir` overrides it |
+| `SHAREFLY_PUBLIC_URL` | `start`, `server`, including the auto-started server | `http://<public-addr>` | base URL for share links; `--public-url` overrides it |
+| `XDG_STATE_HOME` | `start`, `server`, `stop`, auto-start | `~/.local/state` | data lives in `$XDG_STATE_HOME/sharefly`; `--data-dir` overrides it |
 
 ### Server flags
 
-`sharefly start` runs in the foreground until Ctrl-C or SIGTERM. `server` is an alias. While running it writes `<data-dir>/server.pid`, which `stop` uses.
+Both commands take the same flags. `sharefly start` launches the server in the background, waits until it answers, prints its pid and log path, and returns; if one is already running it says so. `sharefly server` runs in the foreground until Ctrl-C or SIGTERM, for Docker, launchd, systemd or debugging. While running, the server writes `<data-dir>/server.pid`, which `stop` uses, and logs to `<data-dir>/server.log` when started in the background.
 
 | Flag | Default | |
 |---|---|---|

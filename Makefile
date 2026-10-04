@@ -37,7 +37,7 @@ check: vet lint test
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "run make fmt" && exit 1)
 
 run: build
-	.bin/sharefly start --data-dir .bin/data
+	.bin/sharefly server --data-dir .bin/data
 
 clean:
 	rm -rf .bin dist

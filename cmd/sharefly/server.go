@@ -34,7 +34,7 @@ type serverConfig struct {
 
 func parseServerFlags(args []string) (serverConfig, error) {
 	var cfg serverConfig
-	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	fs.StringVar(&cfg.apiAddr, "api-addr", defaultAPIAddr, "management API listen address (use the tailnet IP to accept other devices)")
 	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
@@ -73,7 +73,7 @@ func defaultDataDir() (string, error) {
 	return filepath.Join(home, ".local", "state", "sharefly"), nil
 }
 
-func runStart(args []string) error {
+func runServer(args []string) error {
 	cfg, err := parseServerFlags(args)
 	if err != nil {
 		return err
