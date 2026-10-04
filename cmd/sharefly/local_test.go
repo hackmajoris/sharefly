@@ -45,16 +45,16 @@ func listShares(w http.ResponseWriter, _ *http.Request) {
 func TestEnsureLocalServerStartsServerWhenNoneRuns(t *testing.T) {
 	addr := freeAddr(t)
 	var spawned string
-	spawn := func(apiAddr, _ string) error {
+	spawn := func(apiAddr, _ string) (int, error) {
 		spawned = apiAddr
 		ln, err := net.Listen("tcp", apiAddr)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
 		go func() { _ = srv.Serve(ln) }()
 		t.Cleanup(func() { _ = srv.Close() })
-		return nil
+		return 0, nil
 	}
 	if err := ensureLocalServer(&client.Client{BaseURL: "http://" + addr}, "", spawn, 2*time.Second); err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestEnsureLocalServerLeavesRunningServerAlone(t *testing.T) {
 	srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	spawn := func(string, string) error { t.Fatal("must not start a second server"); return nil }
+	spawn := func(string, string) (int, error) { t.Fatal("must not start a second server"); return 0, nil }
 	if err := ensureLocalServer(&client.Client{BaseURL: "http://" + addr}, "", spawn, time.Second); err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestOwnServerAddrMatchesConfiguredAPIAddr(t *testing.T) {
 
 // A server on another machine can't be started from here; its errors must surface unchanged.
 func TestEnsureLocalServerIgnoresRemoteTargets(t *testing.T) {
-	spawn := func(string, string) error { t.Fatal("must not spawn for a remote server"); return nil }
+	spawn := func(string, string) (int, error) { t.Fatal("must not spawn for a remote server"); return 0, nil }
 	if err := ensureLocalServer(&client.Client{BaseURL: "http://macmini:8787"}, "", spawn, time.Second); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestEnsureLocalServerIgnoresRemoteTargets(t *testing.T) {
 
 func TestEnsureLocalServerFailsWhenSpawnedServerNeverAnswers(t *testing.T) {
 	addr := freeAddr(t)
-	err := ensureLocalServer(&client.Client{BaseURL: "http://" + addr}, "", func(string, string) error { return nil }, 300*time.Millisecond)
+	err := ensureLocalServer(&client.Client{BaseURL: "http://" + addr}, "", func(string, string) (int, error) { return 0, nil }, 300*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "did not come up") {
 		t.Fatalf("err = %v, want did not come up", err)
 	}
@@ -272,16 +272,16 @@ func TestStartBackgroundFailsWhenServerNeverAnswers(t *testing.T) {
 func TestEnsureLocalServerPassesTunnelToSpawnedServer(t *testing.T) {
 	addr := freeAddr(t)
 	var gotTunnel string
-	spawn := func(apiAddr, tunnel string) error {
+	spawn := func(apiAddr, tunnel string) (int, error) {
 		gotTunnel = tunnel
 		ln, err := net.Listen("tcp", apiAddr)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
 		go func() { _ = srv.Serve(ln) }()
 		t.Cleanup(func() { _ = srv.Close() })
-		return nil
+		return 0, nil
 	}
 	if err := ensureLocalServer(&client.Client{BaseURL: "http://" + addr}, tunnelQuick, spawn, 2*time.Second); err != nil {
 		t.Fatal(err)
@@ -309,7 +309,7 @@ func TestEnsureLocalServerTunnelMustMatchRunningServer(t *testing.T) {
 	srv := &http.Server{Handler: http.HandlerFunc(listShares), ReadHeaderTimeout: time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	spawn := func(string, string) error { t.Fatal("must not start a second server"); return nil }
+	spawn := func(string, string) (int, error) { t.Fatal("must not start a second server"); return 0, nil }
 	c := &client.Client{BaseURL: "http://" + addr}
 
 	writeArgs := func(args string) {
@@ -328,8 +328,45 @@ func TestEnsureLocalServerTunnelMustMatchRunningServer(t *testing.T) {
 }
 
 func TestEnsureLocalServerRejectsTunnelForRemoteServer(t *testing.T) {
-	spawn := func(string, string) error { t.Fatal("must not spawn for a remote server"); return nil }
+	spawn := func(string, string) (int, error) { t.Fatal("must not spawn for a remote server"); return 0, nil }
 	if err := ensureLocalServer(&client.Client{BaseURL: "http://macmini:8787"}, tunnelQuick, spawn, time.Second); err == nil {
 		t.Fatal("--tunnel against a remote server must fail: it can't change that server's tunnel")
+	}
+}
+
+// serve must not spawn a server that is bound to refuse its config; the reason shows at once, not after a wait.
+func TestSpawnLocalServerChecksConfigFirst(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if _, err := spawnLocalServer(freeAddr(t), tunnelToken); !errors.Is(err, errNoTunnelToken) {
+		t.Fatalf("err = %v, want the missing token", err)
+	}
+}
+
+// A server that dies during startup (bad token, port taken, no cloudflared) must fail start/serve at once
+// with the log's reason, not after the full startup wait with the reason buried in the log.
+func TestStartBackgroundFailsFastWhenServerExits(t *testing.T) {
+	cfg, err := parseServerFlags([]string{"--api-addr", freeAddr(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logFile := filepath.Join(t.TempDir(), logFileName)
+	if err := os.WriteFile(logFile, []byte("starting\nsharefly: boom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spawn := func([]string, string) (int, string, error) {
+		dead := exec.Command("true")
+		if err := dead.Run(); err != nil {
+			return 0, "", err
+		}
+		return dead.Process.Pid, logFile, nil
+	}
+	start := time.Now()
+	err = startBackground(cfg, nil, spawn, 10*time.Second)
+	if err == nil || !strings.Contains(err.Error(), "sharefly: boom") {
+		t.Fatalf("err = %v, want the log's reason", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Errorf("took %s; must not wait out the startup timeout", time.Since(start))
 	}
 }

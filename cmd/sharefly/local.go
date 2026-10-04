@@ -31,7 +31,7 @@ var errNotRunning = errors.New("no local sharefly server running")
 // ensureLocalServer starts a background server when the client targets this machine and nothing answers.
 // A remote server can't be started from here, so its connection errors are left to the caller.
 // A non-empty tunnel is the mode the server must run; a running server in another mode is an error, not restarted.
-func ensureLocalServer(c *client.Client, tunnel string, spawn func(apiAddr, tunnel string) error, wait time.Duration) error {
+func ensureLocalServer(c *client.Client, tunnel string, spawn func(apiAddr, tunnel string) (int, error), wait time.Duration) error {
 	addr, ok := ownServerAddr(c.BaseURL)
 	if !ok {
 		if tunnel != "" {
@@ -46,18 +46,24 @@ func ensureLocalServer(c *client.Client, tunnel string, spawn func(apiAddr, tunn
 		}
 		return nil
 	}
-	if err := spawn(addr, tunnel); err != nil {
+	pid, err := spawn(addr, tunnel)
+	if err != nil {
 		return fmt.Errorf("start local server: %w", err)
 	}
-	return waitReady(c, wait, logPath())
+	return waitReady(c, wait, logPath(), pid)
 }
 
-func waitReady(c *client.Client, wait time.Duration, logFile string) error {
+// waitReady polls until the server answers. It gives up early when the spawned process (pid > 0) has exited,
+// so a startup error shows at once instead of after the whole wait.
+func waitReady(c *client.Client, wait time.Duration, logFile string, pid int) error {
 	deadline := time.Now().Add(wait)
 	for {
 		_, err := c.List()
 		if !errors.Is(err, client.ErrUnreachable) {
 			return nil
+		}
+		if pid > 0 && errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			return fmt.Errorf("server exited during startup:\n%s", logTail(logFile, 5))
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("server did not come up within %s, see %s: %w", wait, logFile, err)
@@ -85,7 +91,7 @@ func startBackground(cfg serverConfig, args []string, spawn func(args []string, 
 	if err != nil {
 		return err
 	}
-	if err := waitReady(c, wait, logFile); err != nil {
+	if err := waitReady(c, wait, logFile, pid); err != nil {
 		return err
 	}
 	links := cfg.publicURL
@@ -172,21 +178,34 @@ func runningTunnel() string {
 	return cfg.tunnel
 }
 
-func spawnLocalServer(apiAddr, tunnel string) error {
+func spawnLocalServer(apiAddr, tunnel string) (int, error) {
 	dir, err := configuredDataDir()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	args := []string{"--api-addr", apiAddr}
 	if tunnel != "" {
 		args = append(args, "--tunnel", tunnel)
 	}
+	if _, err := parseServerFlags(args); err != nil {
+		return 0, err
+	}
 	pid, logFile, err := spawnServer(args, dir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	fmt.Fprintf(os.Stderr, "started local sharefly server (pid %d, log %s)\n", pid, logFile)
-	return nil
+	return pid, nil
+}
+
+// logTail returns the last n lines of a log file, or a pointer to it when it can't be read.
+func logTail(path string, n int) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "see " + path
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	return strings.Join(lines[max(0, len(lines)-n):], "\n")
 }
 
 // spawnServer runs `sharefly server <args>` detached from the terminal, logging to <dataDir>/server.log.
@@ -209,8 +228,9 @@ func spawnServer(args []string, dataDir string) (int, string, error) {
 	if err := cmd.Start(); err != nil {
 		return 0, "", err
 	}
-	pid := cmd.Process.Pid
-	return pid, logf.Name(), cmd.Process.Release()
+	// reap the child when it exits, so waitReady's signal-0 probe sees it gone instead of a zombie
+	go func() { _ = cmd.Wait() }()
+	return cmd.Process.Pid, logf.Name(), nil
 }
 
 func runStop(args []string) error {

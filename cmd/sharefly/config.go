@@ -484,14 +484,14 @@ func restartServer(dataDir string, spawn func(args []string, dataDir string) (in
 			fmt.Fprintf(os.Stderr, "note: the running server was started with %s, which overrides the config file\n", flag)
 		}
 	}
+	cfg, err := parseServerFlags(args)
+	if err != nil {
+		return fmt.Errorf("the running server was left as is: %w", err)
+	}
 	if err := stopServer(filepath.Join(dataDir, pidFileName), shutdownTimeout+time.Second); err != nil {
 		if errors.Is(err, errNotRunning) {
 			return nil
 		}
-		return err
-	}
-	cfg, err := parseServerFlags(args)
-	if err != nil {
 		return err
 	}
 	if err := startBackground(cfg, args, spawn, wait); err != nil {

@@ -32,7 +32,8 @@ type serverConfig struct {
 	publicAddr string
 	dataDir    string
 	publicURL  string
-	// publicURLFlag is true when --public-url pinned the URL; otherwise it follows the config file live
+	// publicURLFlag is true when --public-url (or an explicit --tunnel off, which means local links) pinned the URL;
+	// otherwise it follows the config file live
 	publicURLFlag bool
 	tunnel        string
 	tunnelToken   string
@@ -52,6 +53,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	if fs.NArg() > 0 {
 		return cfg, fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
+	tunnelFlag := cfg.tunnel
 	file, err := loadConfig()
 	if err != nil {
 		return cfg, err
@@ -73,6 +75,14 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	}
 	cfg.tunnelToken = file.TunnelToken
 	cfg.publicURLFlag = cfg.publicURL != ""
+	switch {
+	case cfg.tunnel == tunnelToken && cfg.tunnelToken == "":
+		return cfg, errNoTunnelToken
+	case cfg.tunnel == tunnelToken && !cfg.publicURLFlag && file.PublicURL == "":
+		return cfg, errNoPublicURL
+	case tunnelFlag == tunnelOff && !cfg.publicURLFlag:
+		cfg.publicURL, cfg.publicURLFlag = "http://"+cfg.publicAddr, true
+	}
 	if cfg.publicURL == "" {
 		cfg.publicURL = or(file.PublicURL, "http://"+cfg.publicAddr)
 	}
@@ -161,9 +171,6 @@ func runServer(args []string) error {
 		log.Printf("tunnel: %s via %s", cfg.tunnel, tun.bin)
 		if cfg.tunnel == tunnelQuick && !tun.waitURL(quickURLWait) {
 			log.Printf("tunnel: no quick tunnel URL after %s; links use %s until it arrives", quickURLWait, api.Base())
-		}
-		if cfg.tunnel == tunnelToken && !cfg.publicURLFlag && api.Base() == "http://"+cfg.publicAddr {
-			log.Printf("tunnel: public-url is not set, so links point at %s; set it to your tunnel hostname", api.Base())
 		}
 	}
 

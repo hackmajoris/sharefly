@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -516,5 +518,30 @@ func TestTunnelSettingsValidation(t *testing.T) {
 		if err := setConfig("tunnel", ok, noop); err != nil {
 			t.Errorf("tunnel %q rejected: %v", ok, err)
 		}
+	}
+}
+
+// A config change that makes the server's args invalid must not stop it: it could not be started again.
+func TestRestartServerKeepsServerWhenNewConfigIsInvalid(t *testing.T) {
+	dataDir := t.TempDir()
+	old := exec.Command("sleep", "30")
+	if err := old.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = old.Wait() }()
+	t.Cleanup(func() { _ = old.Process.Kill() })
+	if err := os.WriteFile(filepath.Join(dataDir, pidFileName), []byte(strconv.Itoa(old.Process.Pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, argsFileName), []byte(`["--tunnel","token","--data-dir","`+dataDir+`"]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	spawn := func([]string, string) (int, string, error) { t.Fatal("must not spawn"); return 0, "", nil }
+	if err := restartServer(dataDir, spawn, time.Second); !errors.Is(err, errNoTunnelToken) {
+		t.Fatalf("err = %v, want the missing token", err)
+	}
+	if err := old.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Fatalf("running server was stopped: %v", err)
 	}
 }

@@ -93,6 +93,8 @@ You need a domain on Cloudflare.
    sharefly serve report.html     # → https://share.yourdomain.com/<id>/report.html
    ```
 
+Token mode needs both the token and `public-url` (or `--public-url`); without either, the server refuses to start and `serve` says why before starting anything.
+
 sharefly starts `cloudflared` together with its server, restarts it if it crashes, and stops it with `sharefly stop`; its output goes to the server log. If you installed cloudflared as a system service earlier, remove it (`sudo cloudflared service uninstall`) so two connectors don't run side by side.
 
 ### Share from all your devices
@@ -162,7 +164,7 @@ sharefly config open                                                  # edit the
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
 - A folder's URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
-- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly server --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits up to 5s. `ls`, `rm` and `renew` never auto-start.
+- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly server --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits until it answers. If the server exits during startup, `serve` (and `start`) fail at once with the last lines of its log. `ls`, `rm` and `renew` never auto-start.
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.
 
@@ -182,6 +184,7 @@ Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/co
 | `ttl` | `7d` | `serve` | default link lifetime |
 
 - `sharefly config open` opens the file in `$VISUAL` or `$EDITOR` (e.g. `EDITOR="code --wait"`), or the system's default app if neither is set. The file lists every key with its default filled in, using underscores (`public_url`). `public_url` and `server` stay empty unless you set them, which means they follow `public_addr` and `api_addr`. After a terminal editor exits, the file is checked and a running local server restarts if a listen address or `data_dir` changed. Unknown keys and invalid values are rejected by every command except `config set` and `config open`, so you can always repair the file. A URL without a scheme is accepted: `public-url` gets `https://` and `server` gets `http://`.
+- An explicit `--tunnel off` (on `serve`, `start` or `server`) means local links: the config `public-url` is ignored for that server, since nothing would serve it. `tunnel off` from the config file keeps `public-url`, for a proxy you run yourself. An explicit `--public-url` wins over both.
 - Every key except `tunnel-token` has a matching flag (`--public-url`, `--server`, `--data-dir`, `--api-addr`, `--public-addr`, `--ttl`, `--tunnel`) that overrides the config file for one command, e.g. `sharefly start --tunnel quick`. The token has no flag so it never shows up in `ps`.
 - A running server reads `public-url` from the file whenever the file changes, however you edit it, unless it was started with `--public-url`. Setting another server key (`data-dir`, `api-addr`, `public-addr`, `tunnel`, `tunnel-token`) restarts a running local server with the flags it was started with, so the change applies at once. Changing `data-dir` doesn't move existing shares; the command prints where they are.
 

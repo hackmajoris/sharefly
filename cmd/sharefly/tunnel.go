@@ -49,6 +49,11 @@ type tunnel struct {
 	once  sync.Once
 }
 
+var (
+	errNoTunnelToken = errors.New(`tunnel is "token" but tunnel-token is not set: sharefly config set tunnel-token <token>`)
+	errNoPublicURL   = errors.New(`tunnel is "token" but public-url is not set: sharefly config set public-url <your tunnel hostname>`)
+)
+
 // newTunnel returns nil for mode off. It fails early, before the server binds anything, when the tunnel can't run.
 func newTunnel(mode, token, publicAddr string) (*tunnel, error) {
 	if err := validateTunnel(mode); err != nil {
@@ -58,7 +63,7 @@ func newTunnel(mode, token, publicAddr string) (*tunnel, error) {
 		return nil, nil
 	}
 	if mode == tunnelToken && token == "" {
-		return nil, errors.New(`tunnel is "token" but tunnel-token is not set: sharefly config set tunnel-token <token>`)
+		return nil, errNoTunnelToken
 	}
 	bin, err := exec.LookPath("cloudflared")
 	if err != nil {

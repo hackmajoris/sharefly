@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -342,5 +343,50 @@ func TestPublicURLFlagPinsURL(t *testing.T) {
 	cfg, err = parseServerFlags(nil)
 	if err != nil || cfg.publicURLFlag {
 		t.Fatalf("publicURLFlag = %v, %v; without the flag the url follows the config", cfg.publicURLFlag, err)
+	}
+}
+
+// A token tunnel without its token or a public-url hands out links nobody can open; refuse to start instead.
+func TestParseServerFlagsTokenTunnelNeedsTokenAndPublicURL(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	args := []string{"--tunnel", "token"}
+	if _, err := parseServerFlags(args); !errors.Is(err, errNoTunnelToken) {
+		t.Fatalf("no token: err = %v", err)
+	}
+	if err := saveConfig(config{TunnelToken: testToken}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseServerFlags(args); !errors.Is(err, errNoPublicURL) {
+		t.Fatalf("no public-url: err = %v", err)
+	}
+	if _, err := parseServerFlags(append(args, "--public-url", "https://share.example.com")); err != nil {
+		t.Fatalf("--public-url must satisfy token mode: %v", err)
+	}
+	if err := saveConfig(config{TunnelToken: testToken, PublicURL: "https://share.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseServerFlags(args); err != nil {
+		t.Fatalf("config public-url must satisfy token mode: %v", err)
+	}
+}
+
+// An explicit --tunnel off means "nothing public": links to a public-url nobody serves would be dead.
+// A config tunnel=off keeps public-url, because a reverse proxy run outside sharefly may serve it.
+func TestExplicitTunnelOffPinsLocalLinks(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveConfig(config{PublicURL: "https://share.example.com", PublicAddr: "127.0.0.1:9090"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := parseServerFlags([]string{"--tunnel", "off"})
+	if err != nil || publicURLFunc(cfg, nil)() != "http://127.0.0.1:9090" {
+		t.Fatalf("--tunnel off: url = %q, %v; want local", publicURLFunc(cfg, nil)(), err)
+	}
+	cfg, err = parseServerFlags(nil)
+	if err != nil || publicURLFunc(cfg, nil)() != "https://share.example.com" {
+		t.Fatalf("config tunnel off: url = %q, %v; want config public-url", publicURLFunc(cfg, nil)(), err)
+	}
+	cfg, err = parseServerFlags([]string{"--tunnel", "off", "--public-url", "https://flag.example.com"})
+	if err != nil || publicURLFunc(cfg, nil)() != "https://flag.example.com" {
+		t.Fatalf("--public-url must still win: url = %q, %v", publicURLFunc(cfg, nil)(), err)
 	}
 }
