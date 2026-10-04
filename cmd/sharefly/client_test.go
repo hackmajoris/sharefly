@@ -9,18 +9,25 @@ import (
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
+// Precedence flag > env > config file > default lets a one-off --server or env override a saved setting.
 func TestResolveServerPrecedence(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("SHAREFLY_SERVER", "")
-	if got := resolveServer(""); got != defaultServer {
-		t.Errorf("no flag/env: got %q, want %q", got, defaultServer)
+	check := func(flagVal, want string) {
+		t.Helper()
+		got, err := resolveServer(flagVal)
+		if err != nil || got != want {
+			t.Errorf("resolveServer(%q) = %q, %v; want %q", flagVal, got, err, want)
+		}
 	}
+	check("", defaultServer)
+	if err := saveConfig(config{Server: "http://file:1"}); err != nil {
+		t.Fatal(err)
+	}
+	check("", "http://file:1")
 	t.Setenv("SHAREFLY_SERVER", "http://env:1")
-	if got := resolveServer(""); got != "http://env:1" {
-		t.Errorf("env must be used when flag unset, got %q", got)
-	}
-	if got := resolveServer("http://flag:1"); got != "http://flag:1" {
-		t.Errorf("flag must override env, got %q", got)
-	}
+	check("", "http://env:1")
+	check("http://flag:1", "http://flag:1")
 }
 
 func TestParseClientArgsFlagsAfterPath(t *testing.T) {

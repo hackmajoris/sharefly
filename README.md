@@ -75,11 +75,9 @@ You need a domain on Cloudflare.
    brew install cloudflared
    sudo cloudflared service install <TOKEN>
    ```
-3. Tell sharefly to build links with your domain, then restart its server:
+3. Tell sharefly to build links with your domain. A running local server restarts by itself to pick it up.
    ```
-   echo 'export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com' >> ~/.zshrc
-   source ~/.zshrc
-   sharefly stop
+   sharefly config set public-url https://share.yourdomain.com
    sharefly serve report.html     # → https://share.yourdomain.com/<id>/report.html
    ```
 
@@ -89,14 +87,13 @@ Pick one machine to host the shares (it needs the Cloudflare Tunnel from the pre
 
 1. On the host, start the server on its tailnet address:
    ```
-   echo "export SHAREFLY_SERVER=http://$(tailscale ip -4):8787" >> ~/.zshrc
-   source ~/.zshrc
+   sharefly config set server "http://$(tailscale ip -4):8787"
    sharefly start --api-addr "$(tailscale ip -4):8787"
    ```
-   The host needs `SHAREFLY_SERVER` too: the API now listens only on the tailnet address, so a plain `serve` there would otherwise look for a server on `127.0.0.1`.
+   The host needs the `server` setting too: the API now listens only on the tailnet address, so a plain `serve` there would otherwise look for a server on `127.0.0.1`.
 2. On every other device, install sharefly and point it at the host:
    ```
-   echo 'export SHAREFLY_SERVER=http://<host-tailscale-name-or-ip>:8787' >> ~/.zshrc
+   sharefly config set server http://<host-tailscale-name-or-ip>:8787
    ```
 3. `sharefly serve`, `ls`, `rm` and `renew` now work against the host. A remote server is never auto-started.
 
@@ -118,14 +115,14 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 
 | Symptom | What to do |
 |---|---|
-| `can't reach sharefly server at ...` | For a remote server: check `tailscale status` and that the server is running. `SHAREFLY_SERVER` must include `http://`. |
+| `can't reach sharefly server at ...` | For a remote server: check `tailscale status` and that the server is running. The `server` setting must include `http://` (`sharefly config` shows it). |
 | `local server did not come up` | Read the log: `tail ~/.local/state/sharefly/server.log`. Usually ports 8787 or 8080 are taken: `lsof -iTCP:8787 -iTCP:8080 -sTCP:LISTEN`. |
 | `a sharefly server is answering ... but has no pid file` | A server started by an older version or with another `--data-dir` is still running. Stop it with the `kill` command from the message. |
 | Public link shows Cloudflare 502 | cloudflared can't reach the file server. sharefly must be running on the same machine as cloudflared, and the tunnel's hostname must point at `127.0.0.1:8080`. |
 | Public link shows Cloudflare 1033 | The tunnel is down. Check the connector: `sudo cloudflared service uninstall`, then install it again with the token from the dashboard. |
 | Public link gives a DNS error | The domain isn't Active on Cloudflare yet, or the tunnel has no public hostname. |
 | Public link shows `404 page not found` | The share expired or was deleted. Check `sharefly ls`. |
-| Links still show `127.0.0.1` after setting `SHAREFLY_PUBLIC_URL` | Run `sharefly stop`; the server reads the variable only when it starts. |
+| Links still show `127.0.0.1` | Check `sharefly config`. If the server was started with `--public-url` or `$SHAREFLY_PUBLIC_URL`, those override the config file. |
 
 ## Reference
 
@@ -139,6 +136,9 @@ sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now
 sharefly start [flags]                                   # start the server in the background
 sharefly server [flags]                                  # run the server in the foreground
 sharefly stop [--data-dir DIR]                           # stop the local server
+sharefly config                                          # show settings and where they come from
+sharefly config set <key> <value>                        # save a setting
+sharefly config unset <key>                              # remove a setting
 ```
 
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
@@ -148,24 +148,34 @@ sharefly stop [--data-dir DIR]                           # stop the local server
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.
 
-### Environment
+### Configuration
 
-| Variable | Used by | Default | |
+Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/config.json` if set). Change them with `sharefly config set`, not by hand.
+
+| Key | Used by | Default | |
 |---|---|---|---|
-| `SHAREFLY_SERVER` | `serve`, `ls`, `rm`, `renew`, `stop` | `http://127.0.0.1:8787` | server API URL, with scheme; `--server` overrides it |
-| `SHAREFLY_PUBLIC_URL` | `start`, `server`, including the auto-started server | `http://<public-addr>` | base URL for share links; `--public-url` overrides it |
-| `XDG_STATE_HOME` | `start`, `server`, `stop`, auto-start | `~/.local/state` | data lives in `$XDG_STATE_HOME/sharefly`; `--data-dir` overrides it |
+| `public-url` | `start`, `server`, auto-start | `http://<public-addr>` | base URL for share links; setting it restarts a running local server |
+| `server` | `serve`, `ls`, `rm`, `renew`, `stop` | `http://127.0.0.1:8787` | server API URL, with scheme |
+
+Each setting is resolved as flag, then environment variable, then config file, then default:
+
+| Key | Flag | Environment variable |
+|---|---|---|
+| `public-url` | `--public-url` | `SHAREFLY_PUBLIC_URL` |
+| `server` | `--server` | `SHAREFLY_SERVER` |
+
+Data lives in `~/.local/state/sharefly` (`$XDG_STATE_HOME/sharefly` if set); `--data-dir` overrides it.
 
 ### Server flags
 
-Both commands take the same flags. `sharefly start` launches the server in the background, waits until it answers, prints its pid and log path, and returns; if one is already running it says so. `sharefly server` runs in the foreground until Ctrl-C or SIGTERM, to watch its log or to run it under your own service manager. While running, the server writes `<data-dir>/server.pid`, which `stop` uses, and logs to `<data-dir>/server.log` when started in the background.
+Both commands take the same flags. `sharefly start` launches the server in the background, waits until it answers, prints its pid and log path, and returns; if one is already running it says so. `sharefly server` runs in the foreground until Ctrl-C or SIGTERM, to watch its log or to run it under your own service manager. While running, the server writes `<data-dir>/server.pid`, which `stop` uses, and `<data-dir>/server.args.json`, which `config set public-url` uses to restart it with the same flags. It logs to `<data-dir>/server.log` when started in the background.
 
 | Flag | Default | |
 |---|---|---|
 | `--api-addr` | `127.0.0.1:8787` | management API listen address; use the tailnet IP to accept other devices |
-| `--public-url` | `$SHAREFLY_PUBLIC_URL`, else `http://<public-addr>` | base URL used to build share links |
+| `--public-url` | `$SHAREFLY_PUBLIC_URL`, else config `public-url`, else `http://<public-addr>` | base URL used to build share links |
 | `--public-addr` | `127.0.0.1:8080` | file server listen address (what cloudflared points at) |
-| `--data-dir` | `$XDG_STATE_HOME/sharefly`, else `~/.local/state/sharefly` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.log` |
+| `--data-dir` | `$XDG_STATE_HOME/sharefly`, else `~/.local/state/sharefly` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.args.json`, `server.log` |
 
 ### HTTP API
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -38,16 +39,18 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	fs.StringVar(&cfg.apiAddr, "api-addr", defaultAPIAddr, "management API listen address (use the tailnet IP to accept other devices)")
 	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
-	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default $SHAREFLY_PUBLIC_URL or http://<public-addr>)")
+	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default $SHAREFLY_PUBLIC_URL, config `public-url`, or http://<public-addr>)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
 	if fs.NArg() > 0 {
 		return cfg, fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
-	if cfg.publicURL == "" {
-		cfg.publicURL = os.Getenv("SHAREFLY_PUBLIC_URL")
+	file, err := loadConfig()
+	if err != nil {
+		return cfg, err
 	}
+	cfg.publicURL = resolve(cfg.publicURL, "SHAREFLY_PUBLIC_URL", file.PublicURL)
 	if cfg.publicURL == "" {
 		cfg.publicURL = "http://" + cfg.publicAddr
 	}
@@ -114,6 +117,15 @@ func runServer(args []string) error {
 		return err
 	}
 	defer func() { _ = os.Remove(pidFile) }()
+	argsFile := filepath.Join(cfg.dataDir, argsFileName)
+	argsJSON, err := json.Marshal(args)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(argsFile, argsJSON, 0o644); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(argsFile) }()
 
 	servers := []*http.Server{
 		{Handler: api.Handler(), ReadHeaderTimeout: readHeaderTimeout},

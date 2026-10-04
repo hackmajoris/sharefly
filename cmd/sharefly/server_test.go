@@ -209,6 +209,9 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	if !pathExists(filepath.Join(dir, pidFileName)) {
 		t.Error("running server must write its pid file, or `sharefly stop` can't find it")
 	}
+	if !pathExists(filepath.Join(dir, argsFileName)) {
+		t.Error("running server must record its flags, or `config set` can't restart it with them")
+	}
 	if resp, err := http.Get("http://" + publicAddr + "/live/"); err != nil || resp.StatusCode != http.StatusOK {
 		t.Errorf("public listener not serving live share: %v %v", resp, err)
 	} else {
@@ -223,8 +226,8 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 		if err != nil {
 			t.Fatalf("shutdown returned %v, want nil", err)
 		}
-		if pathExists(filepath.Join(dir, pidFileName)) {
-			t.Error("pid file left behind after shutdown")
+		if pathExists(filepath.Join(dir, pidFileName)) || pathExists(filepath.Join(dir, argsFileName)) {
+			t.Error("pid or args file left behind after shutdown")
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("runServer did not shut down on SIGINT")

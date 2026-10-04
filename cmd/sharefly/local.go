@@ -20,6 +20,7 @@ import (
 const (
 	defaultAPIAddr = "127.0.0.1:8787"
 	pidFileName    = "server.pid"
+	argsFileName   = "server.args.json"
 	logFileName    = "server.log"
 	startWait      = 5 * time.Second
 	pollInterval   = 100 * time.Millisecond
@@ -177,7 +178,10 @@ func runStop(args []string) error {
 	if !errors.Is(err, errNotRunning) {
 		return err
 	}
-	base := resolveServer("")
+	base, resolveErr := resolveServer("")
+	if resolveErr != nil {
+		return resolveErr
+	}
 	addr, ok := localAPIAddr(base)
 	if !ok {
 		return err

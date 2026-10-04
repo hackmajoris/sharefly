@@ -17,6 +17,7 @@ commands:
   start     start the share server in the background (serve does this automatically)
   server    run the share server in the foreground
   stop      stop the local share server
+  config    show or change settings: config [set <key> <value> | unset <key>]
 `
 
 func main() {
@@ -36,6 +37,8 @@ func run(args []string) int {
 		err = runServer(args[1:])
 	case "stop":
 		err = runStop(args[1:])
+	case "config":
+		err = runConfig(args[1:])
 	case "serve":
 		err = runServe(args[1:])
 	case "ls":
