@@ -15,7 +15,7 @@ commands:
   rm        delete a share: rm <id>
   renew     extend a share: renew <id> [--ttl 7d]
   start     start the share server in the background (serve does this automatically)
-  server    run the share server in the foreground (for Docker, launchd, systemd)
+  server    run the share server in the foreground
   stop      stop the local share server
 `
 
