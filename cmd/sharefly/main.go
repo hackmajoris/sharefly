@@ -18,6 +18,8 @@ commands:
   server    run the share server in the foreground
   stop      stop the local share server
   config    show or change settings: config [set <key> <value> | unset <key> | open]
+
+run 'sharefly <command> -h' for a command's flags, 'sharefly config -h' for all settings
 `
 
 func main() {
@@ -28,6 +30,10 @@ func run(args []string) int {
 	if len(args) < 1 {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
+	}
+	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		fmt.Print(usage)
+		return 0
 	}
 	var err error
 	switch args[0] {

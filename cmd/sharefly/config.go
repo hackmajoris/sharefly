@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -35,27 +36,53 @@ type config struct {
 
 type configKey struct {
 	name       string
+	help       string
 	field      func(*config) *string
 	def        func(config) (string, error)
 	validate   func(string) error
 	serverSide bool
 	// derived keys default to another key's value, so the file keeps them empty to keep following it
-	derived bool
+	derived     bool
+	defaultHelp string
 }
 
 var configKeys = []configKey{
-	{"public-url", func(c *config) *string { return &c.PublicURL },
-		func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil }, validateURL, true, true},
-	{"server", func(c *config) *string { return &c.Server },
-		func(c config) (string, error) { return "http://" + dialAddr(or(c.APIAddr, defaultAPIAddr)), nil }, validateURL, false, true},
-	{"data-dir", func(c *config) *string { return &c.DataDir },
-		func(config) (string, error) { return defaultDataDir() }, validateAbsPath, true, false},
-	{"api-addr", func(c *config) *string { return &c.APIAddr },
-		func(config) (string, error) { return defaultAPIAddr, nil }, validateAddr, true, false},
-	{"public-addr", func(c *config) *string { return &c.PublicAddr },
-		func(config) (string, error) { return defaultPublicAddr, nil }, validateAddr, true, false},
-	{"ttl", func(c *config) *string { return &c.TTL },
-		func(config) (string, error) { return defaultTTL, nil }, validateTTL, false, false},
+	{
+		name: "public-url", help: "base URL for share links, e.g. https://share.example.com",
+		field:    func(c *config) *string { return &c.PublicURL },
+		def:      func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil },
+		validate: validateURL, serverSide: true, derived: true, defaultHelp: "http://<public-addr>",
+	},
+	{
+		name: "server", help: "server API URL that serve, ls, rm, renew and stop talk to",
+		field:    func(c *config) *string { return &c.Server },
+		def:      func(c config) (string, error) { return "http://" + dialAddr(or(c.APIAddr, defaultAPIAddr)), nil },
+		validate: validateURL, derived: true, defaultHelp: "http://<api-addr>",
+	},
+	{
+		name: "data-dir", help: "where shares, the pid file and the server log live",
+		field:    func(c *config) *string { return &c.DataDir },
+		def:      func(config) (string, error) { return defaultDataDir() },
+		validate: validateAbsPath, serverSide: true, defaultHelp: "$XDG_STATE_HOME/sharefly or ~/.local/state/sharefly",
+	},
+	{
+		name: "api-addr", help: "management API listen address; use the tailnet IP to accept other devices",
+		field:    func(c *config) *string { return &c.APIAddr },
+		def:      func(config) (string, error) { return defaultAPIAddr, nil },
+		validate: validateAddr, serverSide: true,
+	},
+	{
+		name: "public-addr", help: "file server listen address, what cloudflared points at",
+		field:    func(c *config) *string { return &c.PublicAddr },
+		def:      func(config) (string, error) { return defaultPublicAddr, nil },
+		validate: validateAddr, serverSide: true,
+	},
+	{
+		name: "ttl", help: "default link lifetime: Nm, Nh, Nd or never",
+		field:    func(c *config) *string { return &c.TTL },
+		def:      func(config) (string, error) { return defaultTTL, nil },
+		validate: validateTTL,
+	},
 }
 
 var (
@@ -198,6 +225,9 @@ func validateTTL(raw string) error {
 
 func runConfig(args []string) error {
 	switch {
+	case len(args) == 1 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help"):
+		configHelp(os.Stdout)
+		return flag.ErrHelp
 	case len(args) == 0:
 		return showConfig(os.Stdout)
 	case args[0] == "set" && len(args) == 3:
@@ -207,7 +237,39 @@ func runConfig(args []string) error {
 	case args[0] == "open" && len(args) == 1:
 		return openConfig(editorCommand(), restartLocalServer)
 	default:
-		return errors.New("usage: sharefly config [set <key> <value> | unset <key> | open]")
+		configHelp(os.Stderr)
+		return errors.New("invalid config command")
+	}
+}
+
+func configHelp(w io.Writer) {
+	path, err := configPath()
+	if err != nil {
+		path = "~/.config/sharefly/config.json"
+	}
+	_, _ = fmt.Fprintf(w, `usage: sharefly config [command]
+
+commands:
+  (none)              show every setting, its value and whether it is the default
+  set <key> <value>   save a setting; server keys restart a running local server
+  unset <key>         reset a setting to its default
+  open                edit the config file in $VISUAL, $EDITOR or the default app
+
+config file: %s
+A flag with the same name (e.g. --api-addr) overrides a setting for one command.
+
+keys:
+`, path)
+	for _, k := range configKeys {
+		def := k.defaultHelp
+		if def == "" {
+			def, _ = k.def(config{})
+		}
+		scope := "client"
+		if k.serverSide {
+			scope = "server"
+		}
+		_, _ = fmt.Fprintf(w, "  %-12s %s\n  %-12s default %s (%s)\n", k.name, k.help, "", def, scope)
 	}
 }
 

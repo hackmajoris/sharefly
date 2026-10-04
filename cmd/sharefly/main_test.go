@@ -40,6 +40,9 @@ func TestRunExitCodes(t *testing.T) {
 		{"no command", nil, 2},
 		{"unknown command", []string{"bogus"}, 2},
 		{"help", []string{"serve", "-h"}, 0},
+		{"top-level help", []string{"--help"}, 0},
+		{"config help", []string{"config", "--help"}, 0},
+		{"bad config command", []string{"config", "bogus"}, 1},
 		{"runtime error", []string{"rm"}, 1},
 	}
 	for _, tt := range tests {

@@ -370,3 +370,23 @@ func TestOpenConfigFillsExistingEmptyFileWithoutRestart(t *testing.T) {
 		t.Errorf("file not filled with defaults:\n%s", data)
 	}
 }
+
+// The help is generated from configKeys, so a new key can't be added without being documented.
+func TestConfigHelpDocumentsEveryKey(t *testing.T) {
+	var buf bytes.Buffer
+	configHelp(&buf)
+	out := buf.String()
+	for _, k := range configKeys {
+		if k.help == "" {
+			t.Errorf("key %s has no help text", k.name)
+		}
+		if !strings.Contains(out, k.name) || !strings.Contains(out, k.help) {
+			t.Errorf("help is missing key %s", k.name)
+		}
+	}
+	for _, cmd := range []string{"set <key> <value>", "unset <key>", "open"} {
+		if !strings.Contains(out, cmd) {
+			t.Errorf("help is missing command %q", cmd)
+		}
+	}
+}
