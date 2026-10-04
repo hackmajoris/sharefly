@@ -170,33 +170,83 @@ The archive may hold only regular files and directories with relative paths, at 
 
 ## Always-on server setup
 
-Runs sharefly and cloudflared with Docker Compose on any always-on machine with Docker (OrbStack, Docker Desktop, colima or Linux) and Tailscale.
+Runs sharefly and cloudflared with Docker Compose on an always-on machine, so anyone can open your links while you share from any device on your tailnet.
 
-1. **Tunnel.** In the Cloudflare dashboard, create a tunnel as in step 1 of [Make links public](#make-links-public-with-a-cloudflare-tunnel), but point the public hostname at `http://sharefly:8080` (the container, not `127.0.0.1`). Copy the token. Don't install cloudflared on the host; it runs as a container.
-2. **Get the files.** Clone the repo (or copy `Dockerfile`, `compose.yaml`, `.dockerignore`, `go.mod`, `cmd/`, `pkg/`).
-3. **Configure.** Create a `.env` next to `compose.yaml`. It's git-ignored; the token is a secret.
-   ```
-   SHAREFLY_PUBLIC_URL=https://share.yourdomain.com
-   TAILSCALE_IP=100.x.y.z      # output of `tailscale ip -4`
-   TUNNEL_TOKEN=<token from step 1>
-   ```
-4. **Start.**
-   ```
-   docker compose up -d --build
-   docker compose logs -f sharefly
-   ```
-5. **Use it** from other devices: `export SHAREFLY_SERVER=http://<server>:8787` (see [Share from any device](#share-from-any-device-always-on-server)).
+### 0. Prerequisites
 
-What it does: the API is published only on `TAILSCALE_IP:8787`, so only your tailnet can manage shares. The file server is not published on the host at all; cloudflared reaches it over the compose network. Shares live in the `data` volume and survive restarts and rebuilds. Both containers restart automatically (`restart: unless-stopped`).
+- A domain on Cloudflare, shown as **Active** in the dashboard.
+- Tailscale on the server and on every device you share from (`tailscale status` lists them).
+- Docker on the server (OrbStack, Docker Desktop, colima or Linux), and the machine set never to sleep.
 
-Maintenance:
+### 1. Create the tunnel
+
+In the Cloudflare dashboard, go to Zero Trust → Networks → Tunnels → **Create a tunnel**, choose **Cloudflared** and name it. On the install screen copy only the token (the long `eyJ…` string); don't run the install command, cloudflared runs as a container. The token is a secret.
+
+Then add a **Public Hostname**:
+
+| Field | Value |
+|---|---|
+| Subdomain | `share` |
+| Domain | `yourdomain.com` |
+| Path | *(empty)* |
+| Type | `HTTP` |
+| URL | `sharefly:8080` |
+
+If cloudflared is already installed on the server as a service, remove it (`sudo cloudflared service uninstall`) so two connectors don't compete.
+
+### 2. Start it on the server
+
+```
+git clone https://github.com/hackmajoris/sharefly.git && cd sharefly
+tailscale ip -4                      # note this IP
+cat > .env <<'EOF'
+SHAREFLY_PUBLIC_URL=https://share.yourdomain.com
+TAILSCALE_IP=100.x.y.z
+TUNNEL_TOKEN=eyJ...
+EOF
+docker compose up -d --build
+docker compose logs sharefly         # expect: api on 0.0.0.0:8787, files on 0.0.0.0:8080 ...
+```
+
+`.env` is git-ignored. The tunnel turns **Healthy** in the dashboard within a few seconds.
+
+### 3. Set up each device you share from
+
+```
+brew install --cask hackmajoris/apps/sharefly
+echo 'export SHAREFLY_SERVER=http://<server-tailscale-name-or-ip>:8787' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### 4. Share
+
+```
+sharefly serve report.html           # → https://share.yourdomain.com/<id>/report.html
+```
+
+Check once: open the link on your phone over mobile data (off the tailnet), then `sharefly rm <id>` and confirm it returns 404 right away.
+
+### How it works
+
+The API is published only on `TAILSCALE_IP:8787`, so only your tailnet can manage shares. The file server isn't published on the host at all; cloudflared reaches it over the compose network. Shares live in the `data` volume and survive restarts and rebuilds. Both containers restart automatically.
+
+### Maintenance
+
 - Update after `git pull`: `docker compose up -d --build`
 - Stop: `docker compose down` (add `-v` to also delete all shares)
 - Logs: `docker compose logs -f`
 
-Caveats:
-- **Boot.** OrbStack and Docker Desktop start only after you log in. Enable auto-login, or use colima as a launchd service or a Linux host for a true headless boot. Keep the machine from sleeping (macOS: System Settings → Energy).
-- **Tailscale first.** Docker can publish the API only once the tailnet IP exists. If the stack started before Tailscale connected, run `docker compose up -d` again.
+### If it fails
+
+| Symptom | Fix |
+|---|---|
+| `can't reach sharefly server` | Check `SHAREFLY_SERVER` and `tailscale status`. If the stack started before Tailscale connected, run `docker compose up -d` again. |
+| Cloudflare **502** | The hostname must point at `sharefly:8080`, and the `sharefly` container must be running (`docker compose ps`). |
+| Cloudflare **1033** | The tunnel is down: check the token and `docker compose logs cloudflared`. |
+| DNS error | The domain isn't Active on Cloudflare yet. |
+| Links show `127.0.0.1` | `SHAREFLY_PUBLIC_URL` is missing from `.env`. Fix it, then `docker compose up -d`. |
+
+Boot: OrbStack and Docker Desktop start only after you log in. Enable auto-login, or use colima as a launchd service or a Linux host for a true headless boot.
 
 ## Good to know
 
