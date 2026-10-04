@@ -357,3 +357,35 @@ func TestAPIStatusReportsPublicURL(t *testing.T) {
 		t.Errorf("status = %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// The password is handed out exactly once; the API must never return it again, nor the hash it could be
+// brute-forced from, while the record still says the share is protected.
+func TestAPIPasswordShownOnceNeverHash(t *testing.T) {
+	a := newTestAPI(t, 1<<20)
+	rec := do(t, a, http.MethodPost, "/shares?password=1&name=site", tarGz(t, regular("index.html", "secret")))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	up := decode[share.Link](t, rec)
+	if up.Password == "" || !up.Protected || up.PasswordHash != "" {
+		t.Fatalf("upload response = %+v; want the password once, protected, no hash", up)
+	}
+	stored, err := a.Store.Get(up.ID)
+	if err != nil || !share.CheckPassword(stored.PasswordHash, up.Password) {
+		t.Fatalf("stored record must hold the password's hash: %+v, %v", stored, err)
+	}
+	for _, body := range []string{
+		do(t, a, http.MethodGet, "/shares", nil).Body.String(),
+		do(t, a, http.MethodPost, "/shares/"+up.ID+"/renew", strings.NewReader(`{"ttl":"1h"}`)).Body.String(),
+	} {
+		if strings.Contains(body, up.Password) || strings.Contains(body, stored.PasswordHash) || !strings.Contains(body, `"protected":true`) {
+			t.Fatalf("response leaks the password or hash, or drops protected: %s", body)
+		}
+	}
+	if renewed, _ := a.Store.Get(up.ID); renewed.PasswordHash != stored.PasswordHash {
+		t.Fatal("renew must keep the password")
+	}
+	if rec := do(t, a, http.MethodPost, "/shares?password=hunter2", tarGz(t, regular("index.html", "x"))); rec.Code != http.StatusBadRequest {
+		t.Fatalf("chosen password: %d, want 400 (passwords are generated only)", rec.Code)
+	}
+}

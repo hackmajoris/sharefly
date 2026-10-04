@@ -58,6 +58,16 @@ sharefly renew k7f3x9qa2m --ttl 7d # expire 7 days from now
 sharefly rm k7f3x9qa2m             # gone immediately
 ```
 
+### Protect a share with a password
+
+```
+sharefly serve report.html --password
+password: k7f3-x9qa-2mzt-c4wq (shown only now)
+https://share.yourdomain.com/k7f3x9qa2m/report.html
+```
+
+The server generates the password and prints it once, on stderr, so `| pbcopy` still copies only the link. Visitors get a password page; after the right password, a cookie for that share keeps them in until the browser closes. Scripts can send it as HTTP Basic auth instead: `curl -u x:<password> <url>`. sharefly stores only a hash, so a lost password can't be shown again: `rm` the share and serve it again.
+
 ### Copy the link or open it right away
 
 ```
@@ -146,20 +156,21 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 ### Commands
 
 ```
-sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M]   # upload, print only the URL
-sharefly ls [--server URL]                                            # table: ID NAME EXPIRES URL
-sharefly rm <id> [--server URL]                                       # delete a share, prints nothing
-sharefly rm --all [--server URL]                                      # delete every share, prints nothing
-sharefly renew <id> [--ttl 7d] [--server URL]                         # reset expiry from now, prints the row
-sharefly start [flags]                                                # start the server in the background
-sharefly server [flags]                                               # run the server in the foreground
-sharefly stop [--data-dir DIR]                                        # stop the local server
-sharefly config                                                       # show settings and where they come from
-sharefly config set <key> <value>                                     # save a setting
-sharefly config unset <key>                                           # remove a setting
-sharefly config open                                                  # edit the config file in your editor
+sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M] [--password]   # upload, print only the URL
+sharefly ls [--server URL]                                                         # table: ID NAME EXPIRES URL
+sharefly rm <id> [--server URL]                                                    # delete a share, prints nothing
+sharefly rm --all [--server URL]                                                   # delete every share, prints nothing
+sharefly renew <id> [--ttl 7d] [--server URL]                                      # reset expiry from now, prints the row
+sharefly start [flags]                                                             # start the server in the background
+sharefly server [flags]                                                            # run the server in the foreground
+sharefly stop [--data-dir DIR]                                                     # stop the local server
+sharefly config                                                                    # show settings and where they come from
+sharefly config set <key> <value>                                                  # save a setting
+sharefly config unset <key>                                                        # remove a setting
+sharefly config open                                                               # edit the config file in your editor
 ```
 
+- `--password` (serve): protect the share with a generated password, printed once on stderr.
 - `--tunnel` (serve): tunnel for the server `serve` starts (`off`, `quick`, `token`). Error if a server already runs in another mode, or if `--server` is another machine.
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
@@ -198,18 +209,18 @@ The management API on `--api-addr` is plain HTTP + JSON. The CLI uses it; any ot
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| `POST` | `/shares?ttl=7d&name=report.html` (tar.gz body; missing `ttl` = `7d`) | 201 record + `url` | 400 bad ttl or archive, 413 body or uncompressed size over 100MB, 500 |
+| `POST` | `/shares?ttl=7d&name=report.html[&password=1]` (tar.gz body; missing `ttl` = `7d`) | 201 record + `url` (+ `password` once) | 400 bad ttl, archive or `password` value, 413 body or uncompressed size over 100MB, 500 |
 | `GET` | `/shares` | 200 array of record + `url` | |
 | `DELETE` | `/shares/{id}` | 204 | 404, 500 |
 | `POST` | `/shares/{id}/renew` body `{"ttl":"7d"}` | 200 record + `url` | 400, 404 (also for an already-expired share), 500 |
 
-Record: `{"id","name","entry","size","created_at","expires_at","url"}`. `entry` is the path opened by `url`, relative to the share (`""` = its `index.html`); `size` is uncompressed bytes; `expires_at: null` means never. Errors are `{"error":"..."}`.
+Record: `{"id","name","entry","size","created_at","expires_at","url","protected"}`; the upload response of a protected share also has `"password"`, and no response ever has it again. `entry` is the path opened by `url`, relative to the share (`""` = its `index.html`); `size` is uncompressed bytes; `expires_at: null` means never. Errors are `{"error":"..."}`.
 
 The archive may hold only regular files and directories with relative paths, at most 10000 entries, and no entry may conflict with an earlier one (a file `a` followed by `a/b`).
 
 ## Good to know
 
-- **Access:** each share gets a random 10-character ID. The unguessable link is the only access control. When the server listens on its tailnet address, anyone on your tailnet can create and delete shares.
+- **Access:** each share gets a random 10-character ID. The unguessable link is the only access control, unless the share was served with `--password` (80-bit generated password, asked on a password page and kept in a cookie scoped to that share). When the server listens on its tailnet address, anyone on your tailnet can create and delete shares.
 - **Expiry:** expired shares are swept at startup and every 5 minutes. `rm` takes effect immediately; responses carry `Cache-Control: private, no-store`, so Cloudflare never serves stale copies.
 - **Limits:** 100MB per upload (compressed and uncompressed), 10000 files.
 - **What gets uploaded:** empty folders aren't. `.git` and `.DS_Store` are skipped. Inside a folder, symlinks and other non-regular files are skipped with a warning, and a symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed.

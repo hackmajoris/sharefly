@@ -12,6 +12,7 @@ Invariants (keep when changing code):
 - Delete a share's dir before its record (Sweep, API delete): a crash must leave a dangling record, never an orphaned public dir.
 - Renew rejects already-expired shares, because Sweep deletes from a snapshot without re-checking.
 - Store mutations clone the slice, save `shares.json` (fsync + rename), then swap in memory, so memory is never ahead of disk.
+- A share with `password_hash` needs its cookie (value = the hash, `Path=/<id>/`, HttpOnly, SameSite=Lax, Secure under `X-Forwarded-Proto: https`) or HTTP Basic auth on every public request, else a 401 password form with no `WWW-Authenticate` (that header would pop the browser dialog over it); the files handler resolves the share ID from `path.Clean` of the path, as `http.FileServer` does, so `..`/`//` tricks can't reach a protected dir. Passwords are generated only (80 bits), which is why a fast SHA-256 hash and no rate limit are safe; API responses never carry the hash, and the password only in the upload response.
 - Public responses always carry `Cache-Control: private, no-store`, including 404s. It is set in a ResponseWriter wrapper because `http.FileServer` strips it from error responses.
 - The public file system hides directories without a regular-file `index.html`: no listing anywhere.
 - Extraction writes only regular files/dirs, requests modes 0644/0755 (ignores tar header modes), and caps uncompressed bytes (100MB, while reading) and entry count.

@@ -19,11 +19,16 @@ type Share struct {
 	Size      int64      `json:"size"`
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt *time.Time `json:"expires_at"`
+	// PasswordHash, when set, makes the public file server require the share's password.
+	PasswordHash string `json:"password_hash,omitempty"`
 }
 
+// Link is a share as the API returns it: never the password hash, the password only once, from the upload.
 type Link struct {
 	Share
-	URL string `json:"url"`
+	URL       string `json:"url"`
+	Protected bool   `json:"protected"`
+	Password  string `json:"password,omitempty"`
 }
 
 type Store struct {

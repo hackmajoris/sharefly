@@ -27,7 +27,8 @@ var (
 	uploadClient = &http.Client{}
 )
 
-func (c *Client) Upload(path, ttl string) (sh share.Link, skipped []string, err error) {
+// Upload shares path. With password, the server generates one and returns it once in sh.Password.
+func (c *Client) Upload(path, ttl string, password bool) (sh share.Link, skipped []string, err error) {
 	if _, _, err := share.ParseTTL(ttl); err != nil {
 		return sh, nil, err
 	}
@@ -49,6 +50,9 @@ func (c *Client) Upload(path, ttl string) (sh share.Link, skipped []string, err 
 	}()
 
 	q := url.Values{"ttl": {ttl}, "name": {filepath.Base(abs)}}
+	if password {
+		q.Set("password", "1")
+	}
 	req, err := http.NewRequest(http.MethodPost, c.endpoint("/shares?"+q.Encode()), pr)
 	if err != nil {
 		_ = pr.Close()
@@ -64,7 +68,17 @@ func (c *Client) Upload(path, ttl string) (sh share.Link, skipped []string, err 
 		}
 		return sh, nil, archErr
 	}
-	return sh, skipped, c.handle(resp, err, http.StatusCreated, &sh)
+	if err := c.handle(resp, err, http.StatusCreated, &sh); err != nil {
+		return sh, skipped, err
+	}
+	// a server without password support ignores the parameter and publishes the share unprotected
+	if password && (!sh.Protected || sh.Password == "") {
+		if derr := c.Delete(sh.ID); derr != nil {
+			return share.Link{}, skipped, fmt.Errorf("the server doesn't support --password (older version?) and published %s unprotected; delete it: sharefly rm %s (%v)", sh.ID, sh.ID, derr)
+		}
+		return share.Link{}, skipped, errors.New("the server doesn't support --password (older version?); the unprotected share was deleted. Restart it with this version: sharefly stop")
+	}
+	return sh, skipped, nil
 }
 
 func (c *Client) List() ([]share.Link, error) {

@@ -139,3 +139,32 @@ func TestRunRmAllDeletesEveryShare(t *testing.T) {
 		t.Fatalf("rm --all left public dirs %v, %v", entries, err)
 	}
 }
+
+// The password goes to stderr: `serve --password | pbcopy` must still copy only the URL.
+func TestRunServeWithPasswordKeepsStdoutURLOnly(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"shares", "tmp"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := share.Open(filepath.Join(dir, "shares.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &server.API{Store: store, DataDir: dir, PublicURL: "https://share.example.com", MaxBytes: 1 << 20}
+	ts := httptest.NewServer(api.Handler())
+	t.Cleanup(ts.Close)
+	f := filepath.Join(t.TempDir(), "report.html")
+	if err := os.WriteFile(f, []byte("r"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out := captureStdout(t, func() int { return run([]string{"serve", f, "--password", "--server", ts.URL}) })
+	shares := store.List()
+	if code != 0 || len(shares) != 1 || shares[0].PasswordHash == "" {
+		t.Fatalf("serve --password: code %d, shares %+v", code, shares)
+	}
+	if want := "https://share.example.com/" + shares[0].ID + "/report.html\n"; out != want {
+		t.Fatalf("stdout = %q, want only %q", out, want)
+	}
+}

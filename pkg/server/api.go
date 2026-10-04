@@ -65,6 +65,18 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	var password, passwordHash string
+	switch r.URL.Query().Get("password") {
+	case "":
+	case "1":
+		if password, passwordHash, err = share.NewPassword(); err != nil {
+			internalError(w, err)
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "password must be 1 or absent")
+		return
+	}
 	id, err := share.NewID()
 	if err != nil {
 		internalError(w, err)
@@ -96,11 +108,12 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	sh := share.Share{
-		ID:        id,
-		Name:      r.URL.Query().Get("name"),
-		Entry:     entry,
-		Size:      size,
-		CreatedAt: now,
+		ID:           id,
+		Name:         r.URL.Query().Get("name"),
+		Entry:        entry,
+		Size:         size,
+		CreatedAt:    now,
+		PasswordHash: passwordHash,
 	}
 	if !never {
 		exp := now.Add(d)
@@ -110,7 +123,9 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, a.response(sh))
+	link := a.response(sh)
+	link.Password = password
+	writeJSON(w, http.StatusCreated, link)
 }
 
 func (a *API) publish(sh share.Share, tmp string) error {
@@ -179,7 +194,9 @@ func (a *API) renew(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) response(sh share.Share) share.Link {
 	path := (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath()
-	return share.Link{Share: sh, URL: strings.TrimSuffix(a.Base(), "/") + path}
+	link := share.Link{Share: sh, URL: strings.TrimSuffix(a.Base(), "/") + path, Protected: sh.PasswordHash != ""}
+	link.PasswordHash = ""
+	return link
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {

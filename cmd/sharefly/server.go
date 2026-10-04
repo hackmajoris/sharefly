@@ -158,7 +158,7 @@ func runServer(args []string) error {
 
 	servers := []*http.Server{
 		{Handler: api.Handler(), ReadHeaderTimeout: readHeaderTimeout},
-		{Handler: server.FilesHandler(sharesDir), ReadHeaderTimeout: readHeaderTimeout},
+		{Handler: server.FilesHandler(sharesDir, store), ReadHeaderTimeout: readHeaderTimeout},
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
