@@ -1,6 +1,6 @@
 # sharefly
 
-Share a static HTML file or folder via a link. Runs locally with zero config; add a Cloudflare Tunnel to make links public, or run it on an always-on home server (e.g. a Mac mini) and share from any device on your tailnet.
+Share a static HTML file or folder via a link. Runs locally with zero config; add a Cloudflare Tunnel to make links public, or run it on an always-on server and share from any device on your tailnet.
 
 ```
 $ sharefly serve report.html
@@ -14,12 +14,12 @@ One binary. `serve` starts a local server in the background when none is running
 
 1. **Local only:** `sharefly serve report.html`. That's it; the link works on this machine.
 2. **Public:** run cloudflared on the same machine with a public hostname pointing at `http://127.0.0.1:8080`, and set `export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com` (e.g. in `~/.zshrc`) so links use it. Run `sharefly stop` once so the next `serve` restarts the server with the new URL.
-3. **Always-on home server:** run `sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com` under launchd on the mini (see [One-time mini setup](#one-time-mini-setup)), and set `SHAREFLY_SERVER=http://<mini>:8787` on your laptops.
+3. **Always-on server:** run `sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com` under launchd on an always-on machine (see [Always-on server setup](#always-on-server-setup)), and set `SHAREFLY_SERVER=http://<server>:8787` on your other devices.
 
 ## Architecture
 
 ```
-laptop                                 mac mini
+client device                          always-on server
 sharefly serve x.html ──tailnet──▶ sharefly start
                                    ├─ API    <tailscale-ip>:8787  (tailnet only)
                                    ├─ files  127.0.0.1:8080       (no dir listing,
@@ -29,7 +29,7 @@ sharefly serve x.html ──tailnet──▶ sharefly start
                 https://share.yourdomain.com/<id>/
 ```
 
-- In the home-server setup the management API listens only on the tailnet address (by default it binds `127.0.0.1`). The file server binds to loopback and is reached only through cloudflared.
+- In the always-on server setup the management API listens only on the tailnet address (by default it binds `127.0.0.1`). The file server binds to loopback and is reached only through cloudflared.
 - Each share gets a random 10-char ID. The unguessable link is the only access control on the public side.
 - Expired shares are swept at startup and every 5 minutes, so an expired share can stay reachable for up to 5 minutes.
 - At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. If that cleanup fails, the server exits with an error instead of serving (launchd retries). Don't put files there by hand.
@@ -41,7 +41,7 @@ sharefly serve x.html ──tailnet──▶ sharefly start
 brew install --cask hackmajoris/apps/sharefly
 ```
 
-Install it on the mini and on each client. The binary lands in `$(brew --prefix)/bin/sharefly`: `/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel. Upgrade with `brew upgrade --cask sharefly`.
+Install it on the server and on each client. The binary lands in `$(brew --prefix)/bin/sharefly`: `/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin` on Intel. Upgrade with `brew upgrade --cask sharefly`.
 
 From source (Go 1.27.1+):
 
@@ -66,7 +66,7 @@ sharefly stop [--data-dir DIR]                           # stop the local server
 - `--ttl`: `Nd` (days), `Nh` (hours), `Nm` (minutes), N a positive integer, or `never`. Default `7d`.
 - Server address: `--server` flag, else `SHAREFLY_SERVER` env, else `http://127.0.0.1:8787` (this machine). It must be a full URL with scheme (`http://host:8787`, not `host:8787`).
 - Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logging to `~/.local/state/sharefly/server.log`, and waits up to 5s for it. Remote servers are never started; their connection errors are reported as-is. `ls`, `rm` and `renew` don't auto-start.
-- The local server lives as long as the machine stays awake; on a laptop, closing the lid stops the links and the expiry sweep. Use the home-server setup for always-on links.
+- The local server lives as long as the machine stays awake; on a laptop, closing the lid stops the links and the expiry sweep. Use the always-on server setup for links that stay up.
 - Flags may come before or after the positional argument.
 - A folder must contain `index.html` at its root; the URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
 - Expiry times print in local time.
@@ -84,7 +84,7 @@ Put them in your shell profile, e.g.:
 
 ```
 export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com   # links go through your Cloudflare Tunnel
-export SHAREFLY_SERVER=http://macmini:8787                # only when using a remote home server
+export SHAREFLY_SERVER=http://<server>:8787               # only when using a remote server
 ```
 
 The auto-started server reads `SHAREFLY_PUBLIC_URL` when it starts, so run `sharefly stop` after changing it.
@@ -93,7 +93,7 @@ The auto-started server reads `SHAREFLY_PUBLIC_URL` when it starts, so run `shar
 
 ```
 sharefly start                                                                       # local, zero config
-sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com  # home server
+sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com  # always-on server
 ```
 
 Runs in the foreground until Ctrl-C or SIGTERM. `server` is an alias for `start`. While running it writes `<data-dir>/server.pid`, which `sharefly stop` uses.
@@ -120,7 +120,7 @@ Record: `{"id","name","entry","size","created_at","expires_at","url"}`. `entry` 
 
 The archive may hold only regular files and directories with relative paths, at most 10000 entries, and no entry may conflict with an earlier one (a file `a` followed by `a/b`).
 
-## One-time mini setup
+## Always-on server setup
 
 1. **Tunnel.** Cloudflare dashboard: Zero Trust → Networks → Tunnels → create a tunnel. Add a public hostname `share.yourdomain.com` → `http://127.0.0.1:8080`. Copy the tunnel token. The token is a secret: anyone holding it can run your tunnel.
 2. **cloudflared.**
