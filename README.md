@@ -1,19 +1,26 @@
 # sharefly
 
-Share a static HTML file or folder from any device on your tailnet via a public URL served from a home server (e.g. a Mac mini) through a Cloudflare Tunnel.
+Share a static HTML file or folder via a link. Runs locally with zero config; add a Cloudflare Tunnel to make links public, or run it on an always-on home server (e.g. a Mac mini) and share from any device on your tailnet.
 
 ```
 $ sharefly serve report.html
-https://share.yourdomain.com/k7f3x9qa2m/report.html
+started local sharefly server (pid 4242, log ~/sharefly/server.log)
+http://127.0.0.1:8080/k7f3x9qa2m/report.html
 ```
 
-One binary, two roles: `sharefly server` on the mini, `serve`/`ls`/`rm`/`renew` on laptops. Standard library only.
+One binary. `serve` starts a local server in the background when none is running; `sharefly stop` stops it. Standard library only.
+
+## Quick start
+
+1. **Local only:** `sharefly serve report.html`. That's it; the link works on this machine.
+2. **Public:** run cloudflared on the same machine with a public hostname pointing at `http://127.0.0.1:8080`, and set `export SHAREFLY_PUBLIC_URL=https://share.yourdomain.com` (e.g. in `~/.zshrc`) so links use it. Run `sharefly stop` once so the next `serve` restarts the server with the new URL.
+3. **Always-on home server:** run `sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com` under launchd on the mini (see [One-time mini setup](#one-time-mini-setup)), and set `SHAREFLY_SERVER=http://<mini>:8787` on your laptops.
 
 ## Architecture
 
 ```
 laptop                                 mac mini
-sharefly serve x.html ──tailnet──▶ sharefly server
+sharefly serve x.html ──tailnet──▶ sharefly start
                                    ├─ API    <tailscale-ip>:8787  (tailnet only)
                                    ├─ files  127.0.0.1:8080       (no dir listing,
                                    │                               Cache-Control: private, no-store)
@@ -22,7 +29,7 @@ sharefly serve x.html ──tailnet──▶ sharefly server
                 https://share.yourdomain.com/<id>/
 ```
 
-- The management API listens only on the tailnet address. The file server binds to loopback and is reached only through cloudflared.
+- In the home-server setup the management API listens only on the tailnet address (by default it binds `127.0.0.1`). The file server binds to loopback and is reached only through cloudflared.
 - Each share gets a random 10-char ID. The unguessable link is the only access control on the public side.
 - Expired shares are swept at startup and every 5 minutes, so an expired share can stay reachable for up to 5 minutes.
 - At startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. If that cleanup fails, the server exits with an error instead of serving (launchd retries). Don't put files there by hand.
@@ -49,14 +56,17 @@ Push a `v*` tag. The release workflow runs GoReleaser, which publishes the GitHu
 ## Client usage
 
 ```
-sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the public URL
+sharefly serve <file|folder> [--ttl 7d] [--server URL]   # upload, print only the URL (auto-starts a local server)
 sharefly ls [--server URL]                               # table: ID NAME EXPIRES URL
 sharefly rm <id> [--server URL]                          # delete a share, prints nothing
 sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now, prints the row
+sharefly stop [--data-dir DIR]                           # stop the local server
 ```
 
 - `--ttl`: `Nd` (days), `Nh` (hours), `Nm` (minutes), N a positive integer, or `never`. Default `7d`.
-- Server address: `--server` flag, else `SHAREFLY_SERVER` env, else `http://macmini:8787`. It must be a full URL with scheme (`http://host:8787`, not `host:8787`). The default relies on the MagicDNS name `macmini`.
+- Server address: `--server` flag, else `SHAREFLY_SERVER` env, else `http://127.0.0.1:8787` (this machine). It must be a full URL with scheme (`http://host:8787`, not `host:8787`).
+- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logging to `~/sharefly/server.log`, and waits up to 5s for it. Remote servers are never started; their connection errors are reported as-is. `ls`, `rm` and `renew` don't auto-start.
+- The local server lives as long as the machine stays awake; on a laptop, closing the lid stops the links and the expiry sweep. Use the home-server setup for always-on links.
 - Flags may come before or after the positional argument.
 - A folder must contain `index.html` at its root; the URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
 - Expiry times print in local time.
@@ -65,15 +75,18 @@ sharefly renew <id> [--ttl 7d] [--server URL]            # reset expiry from now
 ## Server
 
 ```
-sharefly server --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com
+sharefly start                                                                       # local, zero config
+sharefly start --api-addr <tailscale-ip>:8787 --public-url https://share.yourdomain.com  # home server
 ```
+
+Runs in the foreground until Ctrl-C or SIGTERM. `server` is an alias for `start`. While running it writes `<data-dir>/server.pid`, which `sharefly stop` uses.
 
 | Flag | Default | |
 |---|---|---|
-| `--api-addr` | (required) | management API listen address, use the tailnet IP |
-| `--public-url` | (required) | public base URL used to build share links |
+| `--api-addr` | `127.0.0.1:8787` | management API listen address; use the tailnet IP to accept other devices |
+| `--public-url` | `$SHAREFLY_PUBLIC_URL`, else `http://<public-addr>` | base URL used to build share links |
 | `--public-addr` | `127.0.0.1:8080` | public file server listen address |
-| `--data-dir` | `~/sharefly` | holds `shares/`, `tmp/`, `shares.json` |
+| `--data-dir` | `~/sharefly` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.log` |
 
 ## API
 

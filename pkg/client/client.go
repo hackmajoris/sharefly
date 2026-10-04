@@ -15,6 +15,9 @@ import (
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
+// ErrUnreachable wraps connection failures so callers can tell "no server" from API errors.
+var ErrUnreachable = errors.New("can't reach sharefly server")
+
 type Client struct {
 	BaseURL string
 }
@@ -95,7 +98,7 @@ func (c *Client) endpoint(path string) string {
 
 func (c *Client) handle(resp *http.Response, err error, want int, out any) error {
 	if err != nil {
-		return fmt.Errorf("can't reach sharefly server at %s (tailscale up? server running?): %w", c.BaseURL, err)
+		return fmt.Errorf("%w at %s (tailscale up? server running?): %w", ErrUnreachable, c.BaseURL, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != want {

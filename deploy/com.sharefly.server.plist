@@ -9,7 +9,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/sharefly</string>
-		<string>server</string>
+		<string>start</string>
 		<string>--api-addr</string>
 		<string>TAILSCALE_IP:8787</string>
 		<string>--public-addr</string>

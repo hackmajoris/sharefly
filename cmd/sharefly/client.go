@@ -12,7 +12,7 @@ import (
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
-const defaultServer = "http://macmini:8787"
+const defaultServer = "http://" + defaultAPIAddr
 
 func resolveServer(flagVal string) string {
 	if flagVal != "" {
@@ -51,6 +51,9 @@ func runServe(args []string) error {
 	var ttl string
 	c, pos, err := parseClientArgs("serve", args, 1, &ttl)
 	if err != nil {
+		return err
+	}
+	if err := ensureLocalServer(c, spawnLocalServer, startWait); err != nil {
 		return err
 	}
 	sh, skipped, err := c.Upload(pos[0], ttl)

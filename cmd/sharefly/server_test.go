@@ -14,30 +14,25 @@ import (
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
-func TestParseServerFlagsRequired(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"missing public-url", []string{"--api-addr", "127.0.0.1:8787"}, "--public-url"},
-		{"missing api-addr", []string{"--public-url", "https://s.example.com"}, "--api-addr"},
-		{"extra args", []string{"--api-addr", "x:1", "--public-url", "https://s", "stray"}, "unexpected"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := parseServerFlags(tt.args)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("err = %v, want containing %q", err, tt.want)
-			}
-		})
+func TestParseServerFlagsRejectsExtraArgs(t *testing.T) {
+	_, err := parseServerFlags([]string{"stray"})
+	if err == nil || !strings.Contains(err.Error(), "unexpected") {
+		t.Fatalf("err = %v, want unexpected arguments", err)
 	}
 }
 
+// `sharefly start` with no flags must give a working, local-only server whose links open in a local browser.
 func TestParseServerFlagsDefaults(t *testing.T) {
-	cfg, err := parseServerFlags([]string{"--api-addr", "100.64.0.1:8787", "--public-url", "https://s.example.com"})
+	t.Setenv("SHAREFLY_PUBLIC_URL", "")
+	cfg, err := parseServerFlags(nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cfg.apiAddr != "127.0.0.1:8787" {
+		t.Errorf("api must default to loopback so nothing off-machine can manage shares, got %q", cfg.apiAddr)
+	}
+	if cfg.publicURL != "http://127.0.0.1:8080" {
+		t.Errorf("publicURL = %q, want links pointing at the local file server", cfg.publicURL)
 	}
 	if cfg.publicAddr != "127.0.0.1:8080" {
 		t.Errorf("public listener must default to loopback so only cloudflared reaches it, got %q", cfg.publicAddr)
@@ -48,6 +43,33 @@ func TestParseServerFlagsDefaults(t *testing.T) {
 	}
 	if want := filepath.Join(home, "sharefly"); cfg.dataDir != want {
 		t.Errorf("dataDir = %q, want %q", cfg.dataDir, want)
+	}
+}
+
+// An auto-started server gets no flags, so the env var is the only way its links can be public.
+func TestParseServerFlagsPublicURLPrecedence(t *testing.T) {
+	t.Setenv("SHAREFLY_PUBLIC_URL", "https://env.example.com")
+	cfg, err := parseServerFlags(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.publicURL != "https://env.example.com" {
+		t.Errorf("env: publicURL = %q", cfg.publicURL)
+	}
+	cfg, err = parseServerFlags([]string{"--public-url", "https://flag.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.publicURL != "https://flag.example.com" {
+		t.Errorf("flag must override env, got %q", cfg.publicURL)
+	}
+	t.Setenv("SHAREFLY_PUBLIC_URL", "")
+	cfg, err = parseServerFlags([]string{"--public-addr", "127.0.0.1:9090"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.publicURL != "http://127.0.0.1:9090" {
+		t.Errorf("default publicURL must follow --public-addr, got %q", cfg.publicURL)
 	}
 }
 
@@ -113,7 +135,7 @@ func TestRunServerBindFailureLeavesDataUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = busy.Close() }()
-	err = runServer([]string{"--api-addr", freeAddr(t), "--public-addr", busy.Addr().String(),
+	err = runStart([]string{"--api-addr", freeAddr(t), "--public-addr", busy.Addr().String(),
 		"--public-url", "https://s", "--data-dir", dir})
 	if err == nil {
 		t.Fatal("public bind failure must return an error")
@@ -132,7 +154,7 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	apiAddr, publicAddr := freeAddr(t), freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- runServer([]string{"--api-addr", apiAddr, "--public-addr", publicAddr,
+		done <- runStart([]string{"--api-addr", apiAddr, "--public-addr", publicAddr,
 			"--public-url", "https://s", "--data-dir", dir})
 	}()
 
@@ -166,6 +188,9 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 			t.Errorf("%s still present after startup", f)
 		}
 	}
+	if !pathExists(filepath.Join(dir, pidFileName)) {
+		t.Error("running server must write its pid file, or `sharefly stop` can't find it")
+	}
 	if resp, err := http.Get("http://" + publicAddr + "/live/"); err != nil || resp.StatusCode != http.StatusOK {
 		t.Errorf("public listener not serving live share: %v %v", resp, err)
 	} else {
@@ -179,6 +204,9 @@ func TestRunServerStartupCleanupAndShutdown(t *testing.T) {
 	case err := <-done:
 		if err != nil {
 			t.Fatalf("shutdown returned %v, want nil", err)
+		}
+		if pathExists(filepath.Join(dir, pidFileName)) {
+			t.Error("pid file left behind after shutdown")
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("runServer did not shut down on SIGINT")
@@ -200,7 +228,7 @@ func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
 	publicAddr := freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- runServer([]string{"--api-addr", freeAddr(t), "--public-addr", publicAddr,
+		done <- runStart([]string{"--api-addr", freeAddr(t), "--public-addr", publicAddr,
 			"--public-url", "https://s", "--data-dir", dir})
 	}()
 	select {
@@ -221,7 +249,7 @@ func TestRunServerRefusesToServeWhenReconcileFails(t *testing.T) {
 
 func TestRunServerBindFailure(t *testing.T) {
 	dir := t.TempDir()
-	err := runServer([]string{"--api-addr", "256.0.0.1:1", "--public-url", "https://s", "--data-dir", dir})
+	err := runStart([]string{"--api-addr", "256.0.0.1:1", "--public-url", "https://s", "--data-dir", dir})
 	if err == nil {
 		t.Fatal("bind failure must return an error so the process exits non-zero and launchd retries")
 	}

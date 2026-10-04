@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -11,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -34,11 +34,11 @@ type serverConfig struct {
 
 func parseServerFlags(args []string) (serverConfig, error) {
 	var cfg serverConfig
-	fs := flag.NewFlagSet("server", flag.ContinueOnError)
-	fs.StringVar(&cfg.apiAddr, "api-addr", "", "management API listen address (tailnet IP:port, required)")
+	fs := flag.NewFlagSet("start", flag.ContinueOnError)
+	fs.StringVar(&cfg.apiAddr, "api-addr", defaultAPIAddr, "management API listen address (use the tailnet IP to accept other devices)")
 	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
 	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default ~/sharefly)")
-	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL, e.g. https://share.example.com (required)")
+	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default $SHAREFLY_PUBLIC_URL or http://<public-addr>)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
 	}
@@ -46,22 +46,30 @@ func parseServerFlags(args []string) (serverConfig, error) {
 		return cfg, fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}
 	if cfg.publicURL == "" {
-		return cfg, errors.New("--public-url is required")
+		cfg.publicURL = os.Getenv("SHAREFLY_PUBLIC_URL")
 	}
-	if cfg.apiAddr == "" {
-		return cfg, errors.New("--api-addr is required")
+	if cfg.publicURL == "" {
+		cfg.publicURL = "http://" + cfg.publicAddr
 	}
 	if cfg.dataDir == "" {
-		home, err := os.UserHomeDir()
+		dir, err := defaultDataDir()
 		if err != nil {
-			return cfg, fmt.Errorf("no --data-dir and no home directory: %w", err)
+			return cfg, err
 		}
-		cfg.dataDir = filepath.Join(home, "sharefly")
+		cfg.dataDir = dir
 	}
 	return cfg, nil
 }
 
-func runServer(args []string) error {
+func defaultDataDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("no --data-dir and no home directory: %w", err)
+	}
+	return filepath.Join(home, "sharefly"), nil
+}
+
+func runStart(args []string) error {
 	cfg, err := parseServerFlags(args)
 	if err != nil {
 		return err
@@ -95,6 +103,13 @@ func runServer(args []string) error {
 	if err := share.Sweep(store, sharesDir, time.Now()); err != nil {
 		log.Printf("sweep: %v", err)
 	}
+	pidFile := filepath.Join(cfg.dataDir, pidFileName)
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		_ = apiLn.Close()
+		_ = publicLn.Close()
+		return err
+	}
+	defer func() { _ = os.Remove(pidFile) }()
 
 	servers := []*http.Server{
 		{Handler: api.Handler(), ReadHeaderTimeout: readHeaderTimeout},
