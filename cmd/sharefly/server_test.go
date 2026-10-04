@@ -24,6 +24,7 @@ func TestParseServerFlagsRejectsExtraArgs(t *testing.T) {
 // `sharefly start` with no flags must give a working, local-only server whose links open in a local browser.
 func TestParseServerFlagsDefaults(t *testing.T) {
 	t.Setenv("SHAREFLY_PUBLIC_URL", "")
+	t.Setenv("XDG_STATE_HOME", "")
 	cfg, err := parseServerFlags(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -41,8 +42,24 @@ func TestParseServerFlagsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(home, "sharefly"); cfg.dataDir != want {
+	if want := filepath.Join(home, ".local", "state", "sharefly"); cfg.dataDir != want {
 		t.Errorf("dataDir = %q, want %q", cfg.dataDir, want)
+	}
+}
+
+// Users who relocate XDG state expect every tool to follow; a relative value is invalid per the spec and ignored.
+func TestDefaultDataDirHonoursXDGStateHome(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", "/tmp/xdg-state")
+	if dir, err := defaultDataDir(); err != nil || dir != "/tmp/xdg-state/sharefly" {
+		t.Errorf("defaultDataDir() = %q, %v; want /tmp/xdg-state/sharefly", dir, err)
+	}
+	t.Setenv("XDG_STATE_HOME", "relative")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir, _ := defaultDataDir(); dir != filepath.Join(home, ".local", "state", "sharefly") {
+		t.Errorf("relative XDG_STATE_HOME must be ignored, got %q", dir)
 	}
 }
 
@@ -76,6 +93,7 @@ func TestParseServerFlagsPublicURLPrecedence(t *testing.T) {
 // Without a home dir the default would silently become a relative path under launchd's cwd.
 func TestParseServerFlagsNoHomeFailsLoud(t *testing.T) {
 	t.Setenv("HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
 	base := []string{"--api-addr", "100.64.0.1:8787", "--public-url", "https://s.example.com"}
 	if _, err := parseServerFlags(base); err == nil {
 		t.Fatal("no HOME and no --data-dir: want error")

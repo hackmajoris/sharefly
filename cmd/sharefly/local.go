@@ -105,7 +105,7 @@ func spawnLocalServer(apiAddr string) error {
 
 func runStop(args []string) error {
 	fs := flag.NewFlagSet("stop", flag.ContinueOnError)
-	dataDir := fs.String("data-dir", "", "data directory (default ~/sharefly)")
+	dataDir := fs.String("data-dir", "", "data directory (default $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

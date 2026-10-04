@@ -37,7 +37,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	fs.StringVar(&cfg.apiAddr, "api-addr", defaultAPIAddr, "management API listen address (use the tailnet IP to accept other devices)")
 	fs.StringVar(&cfg.publicAddr, "public-addr", "127.0.0.1:8080", "public file server listen address")
-	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default ~/sharefly)")
+	fs.StringVar(&cfg.dataDir, "data-dir", "", "data directory (default $XDG_STATE_HOME/sharefly or ~/.local/state/sharefly)")
 	fs.StringVar(&cfg.publicURL, "public-url", "", "public base URL for links (default $SHAREFLY_PUBLIC_URL or http://<public-addr>)")
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -61,12 +61,16 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	return cfg, nil
 }
 
+// defaultDataDir follows the XDG state dir: shares expire, so they are state, not lasting user data.
 func defaultDataDir() (string, error) {
+	if dir := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(dir) {
+		return filepath.Join(dir, "sharefly"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("no --data-dir and no home directory: %w", err)
 	}
-	return filepath.Join(home, "sharefly"), nil
+	return filepath.Join(home, ".local", "state", "sharefly"), nil
 }
 
 func runStart(args []string) error {

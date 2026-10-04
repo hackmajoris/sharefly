@@ -15,7 +15,7 @@
 		<string>--public-addr</string>
 		<string>127.0.0.1:8080</string>
 		<string>--data-dir</string>
-		<string>/Users/YOUR_USER/sharefly</string>
+		<string>/Users/YOUR_USER/.local/state/sharefly</string>
 		<string>--public-url</string>
 		<string>https://share.yourdomain.com</string>
 	</array>
@@ -26,8 +26,8 @@
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>StandardOutPath</key>
-	<string>/Users/YOUR_USER/sharefly/server.log</string>
+	<string>/Users/YOUR_USER/.local/state/sharefly/server.log</string>
 	<key>StandardErrorPath</key>
-	<string>/Users/YOUR_USER/sharefly/server.log</string>
+	<string>/Users/YOUR_USER/.local/state/sharefly/server.log</string>
 </dict>
 </plist>

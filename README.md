@@ -4,7 +4,7 @@ Share a static HTML file or folder via a link. Runs locally with zero config; ad
 
 ```
 $ sharefly serve report.html
-started local sharefly server (pid 4242, log ~/sharefly/server.log)
+started local sharefly server (pid 4242, log ~/.local/state/sharefly/server.log)
 http://127.0.0.1:8080/k7f3x9qa2m/report.html
 ```
 
@@ -65,7 +65,7 @@ sharefly stop [--data-dir DIR]                           # stop the local server
 
 - `--ttl`: `Nd` (days), `Nh` (hours), `Nm` (minutes), N a positive integer, or `never`. Default `7d`.
 - Server address: `--server` flag, else `SHAREFLY_SERVER` env, else `http://127.0.0.1:8787` (this machine). It must be a full URL with scheme (`http://host:8787`, not `host:8787`).
-- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logging to `~/sharefly/server.log`, and waits up to 5s for it. Remote servers are never started; their connection errors are reported as-is. `ls`, `rm` and `renew` don't auto-start.
+- Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly start --api-addr <that address>` in the background, logging to `~/.local/state/sharefly/server.log`, and waits up to 5s for it. Remote servers are never started; their connection errors are reported as-is. `ls`, `rm` and `renew` don't auto-start.
 - The local server lives as long as the machine stays awake; on a laptop, closing the lid stops the links and the expiry sweep. Use the home-server setup for always-on links.
 - Flags may come before or after the positional argument.
 - A folder must contain `index.html` at its root; the URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
@@ -86,7 +86,7 @@ Runs in the foreground until Ctrl-C or SIGTERM. `server` is an alias for `start`
 | `--api-addr` | `127.0.0.1:8787` | management API listen address; use the tailnet IP to accept other devices |
 | `--public-url` | `$SHAREFLY_PUBLIC_URL`, else `http://<public-addr>` | base URL used to build share links |
 | `--public-addr` | `127.0.0.1:8080` | public file server listen address |
-| `--data-dir` | `~/sharefly` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.log` |
+| `--data-dir` | `$XDG_STATE_HOME/sharefly`, else `~/.local/state/sharefly` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.log` |
 
 ## API
 
@@ -114,9 +114,9 @@ The archive may hold only regular files and directories with relative paths, at 
 3. **Binary.** `brew install --cask hackmajoris/apps/sharefly` (see above).
 4. **Data dir.** Create it as `YOUR_USER` (not with `sudo`) before loading the plist. launchd does not create the log file's parent directory, and the server, which runs as `YOUR_USER`, must be able to write it.
    ```
-   mkdir -p ~/sharefly
+   mkdir -p ~/.local/state/sharefly
    ```
-5. **Plist.** Edit `deploy/com.sharefly.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/opt/homebrew/bin/sharefly` (Intel: `/usr/local/bin/sharefly`). After `brew upgrade --cask sharefly`, restart with `sudo launchctl kickstart -k system/com.sharefly.server`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/sharefly/server.log`) or add a `newsyslog` rule.
+5. **Plist.** Edit `deploy/com.sharefly.server.plist` and replace the placeholders: `YOUR_USER` (in `UserName`, `--data-dir` and both log paths), `TAILSCALE_IP` (from `tailscale ip -4`), `https://share.yourdomain.com`, and the binary path if not `/opt/homebrew/bin/sharefly` (Intel: `/usr/local/bin/sharefly`). After `brew upgrade --cask sharefly`, restart with `sudo launchctl kickstart -k system/com.sharefly.server`. Logs go to `<data-dir>/server.log`, which is never rotated; truncate it now and then (`: > ~/.local/state/sharefly/server.log`) or add a `newsyslog` rule.
    ```
    sudo cp deploy/com.sharefly.server.plist /Library/LaunchDaemons/
    sudo chown root:wheel /Library/LaunchDaemons/com.sharefly.server.plist
