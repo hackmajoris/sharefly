@@ -22,7 +22,10 @@ type API struct {
 	Store     *share.Store
 	DataDir   string
 	PublicURL string
-	MaxBytes  int64
+	// PublicURLFunc, when set, is called for every link instead of using PublicURL, so the base URL can change
+	// while the server runs.
+	PublicURLFunc func() string
+	MaxBytes      int64
 
 	publishMu sync.Mutex
 }
@@ -163,7 +166,11 @@ func (a *API) renew(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) response(sh share.Share) share.Link {
 	path := (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath()
-	return share.Link{Share: sh, URL: strings.TrimSuffix(a.PublicURL, "/") + path}
+	base := a.PublicURL
+	if a.PublicURLFunc != nil {
+		base = a.PublicURLFunc()
+	}
+	return share.Link{Share: sh, URL: strings.TrimSuffix(base, "/") + path}
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {

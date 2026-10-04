@@ -332,3 +332,17 @@ func TestAPIUploadFilesystemErrorIs500WithoutPaths(t *testing.T) {
 		t.Fatalf("error leaks server path: %s", rec.Body)
 	}
 }
+
+// A server whose public URL changes while running must use the new one for every link it hands out.
+func TestAPIUsesPublicURLFunc(t *testing.T) {
+	api := newTestAPI(t, 1<<20)
+	base := "https://one.example.com"
+	api.PublicURLFunc = func() string { return base }
+	if got := api.response(share.Share{ID: "abc", Entry: "x.html"}).URL; got != "https://one.example.com/abc/x.html" {
+		t.Errorf("url = %q", got)
+	}
+	base = "https://two.example.com/"
+	if got := api.response(share.Share{ID: "abc"}).URL; got != "https://two.example.com/abc/" {
+		t.Errorf("url after change = %q", got)
+	}
+}

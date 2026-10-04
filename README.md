@@ -75,7 +75,7 @@ You need a domain on Cloudflare.
    brew install cloudflared
    sudo cloudflared service install <TOKEN>
    ```
-3. Tell sharefly to build links with your domain. A running local server restarts by itself to pick it up.
+3. Tell sharefly to build links with your domain. A running server picks it up immediately.
    ```
    sharefly config set public-url https://share.yourdomain.com
    sharefly serve report.html     # → https://share.yourdomain.com/<id>/report.html
@@ -162,9 +162,9 @@ Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/co
 | `public-addr` | `127.0.0.1:8080` | server | file server listen address (what cloudflared points at) |
 | `ttl` | `7d` | `serve` | default link lifetime |
 
-- `sharefly config open` opens the file in `$VISUAL` or `$EDITOR` (e.g. `EDITOR="code --wait"`), or the system's default app if neither is set. The file lists every key with its default filled in, using underscores (`public_url`). `public_url` and `server` stay empty unless you set them, which means they follow `public_addr` and `api_addr`. After a terminal editor exits, the file is checked and a running local server restarts if a server key changed. Unknown keys and invalid values are rejected by every command except `config set` and `config open`, so you can always repair the file. A URL without a scheme is accepted: `public-url` gets `https://` and `server` gets `http://`.
+- `sharefly config open` opens the file in `$VISUAL` or `$EDITOR` (e.g. `EDITOR="code --wait"`), or the system's default app if neither is set. The file lists every key with its default filled in, using underscores (`public_url`). `public_url` and `server` stay empty unless you set them, which means they follow `public_addr` and `api_addr`. After a terminal editor exits, the file is checked and a running local server restarts if a listen address or `data_dir` changed. Unknown keys and invalid values are rejected by every command except `config set` and `config open`, so you can always repair the file. A URL without a scheme is accepted: `public-url` gets `https://` and `server` gets `http://`.
 - Every key has a matching flag (`--public-url`, `--server`, `--data-dir`, `--api-addr`, `--public-addr`, `--ttl`) that overrides the config file for one command.
-- Setting a server key (`public-url`, `data-dir`, `api-addr`, `public-addr`) restarts a running local server with the flags it was started with, so the change applies at once. Changing `data-dir` doesn't move existing shares; the command prints where they are.
+- A running server reads `public-url` from the file whenever the file changes, however you edit it, unless it was started with `--public-url`. Setting another server key (`data-dir`, `api-addr`, `public-addr`) restarts a running local server with the flags it was started with, so the change applies at once. Changing `data-dir` doesn't move existing shares; the command prints where they are.
 
 ### Server
 

@@ -44,6 +44,8 @@ type configKey struct {
 	// derived keys default to another key's value, so the file keeps them empty to keep following it
 	derived     bool
 	defaultHelp string
+	// live keys are picked up by a running server without a restart
+	live bool
 	// scheme is prepended when a URL value is given without one, e.g. a bare domain
 	scheme string
 }
@@ -53,7 +55,7 @@ var configKeys = []configKey{
 		name: "public-url", help: "base URL for share links, e.g. share.example.com (https:// is added)",
 		field:    func(c *config) *string { return &c.PublicURL },
 		def:      func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil },
-		validate: validateURL, serverSide: true, derived: true, defaultHelp: "http://<public-addr>", scheme: "https",
+		validate: validateURL, serverSide: true, live: true, derived: true, defaultHelp: "http://<public-addr>", scheme: "https",
 	},
 	{
 		name: "server", help: "server API URL that serve, ls, rm, renew and stop talk to",
@@ -276,7 +278,8 @@ func configHelp(w io.Writer) {
 
 commands:
   (none)              show every setting, its value and whether it is the default
-  set <key> <value>   save a setting; server keys restart a running local server
+  set <key> <value>   save a setting; a running server applies public-url at once,
+                      other server keys restart it
   unset <key>         reset a setting to its default
   open                edit the config file in $VISUAL, $EDITOR or the default app
 
@@ -332,7 +335,7 @@ func openConfig(editor []string, restart func(oldDataDir string) error) error {
 		if err := exec.Command(opener, args...).Run(); err != nil {
 			return fmt.Errorf("open %s: %w (set $EDITOR to use a terminal editor)", path, err)
 		}
-		fmt.Fprintln(os.Stderr, "after saving, run `sharefly config` to check it; restart the server with `sharefly stop` and `sharefly start`")
+		fmt.Fprintln(os.Stderr, "after saving, run `sharefly config` to check it. public-url applies at once; for other server keys run `sharefly stop` and `sharefly start`")
 		return nil
 	}
 	cmd := exec.Command(editor[0], append(editor[1:], path)...)
@@ -357,7 +360,7 @@ func openConfig(editor []string, restart func(oldDataDir string) error) error {
 		return err
 	}
 	for _, k := range configKeys {
-		if !k.serverSide {
+		if !k.serverSide || k.live {
 			continue
 		}
 		was, _, err := before.value(k)
@@ -427,7 +430,7 @@ func setConfig(name, value string, restart func(oldDataDir string) error) error 
 			fmt.Fprintf(os.Stderr, "note: existing shares stay in %s; move them with: mv %q %q\n", oldDataDir, oldDataDir, newDir)
 		}
 	}
-	if !k.serverSide {
+	if !k.serverSide || k.live {
 		return nil
 	}
 	return restart(oldDataDir)

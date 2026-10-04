@@ -82,8 +82,8 @@ func TestSetConfigRoundTripAndUnset(t *testing.T) {
 	if c, err := loadConfig(); err != nil || c != want {
 		t.Fatalf("after set: %+v, %v; want %+v", c, err, want)
 	}
-	if len(restartedFrom) != 4 {
-		t.Errorf("restarts = %d; every server-side key (public-url, data-dir, api-addr, public-addr) must restart, client keys must not", len(restartedFrom))
+	if len(restartedFrom) != 3 {
+		t.Errorf("restarts = %d; data-dir, api-addr and public-addr must restart; public-url is live and client keys never restart", len(restartedFrom))
 	}
 	if err := setConfig("server", "", restart); err != nil {
 		t.Fatal(err)
@@ -223,19 +223,28 @@ func fakeEditor(t *testing.T, content string) []string {
 	return []string{script}
 }
 
-// Editing a server-side key by hand must reach the running server, same as `config set`.
+// Editing a listen address by hand must reach the running server, same as `config set`.
 func TestOpenConfigRestartsAfterServerSideEdit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	restarts := 0
 	restart := func(string) error { restarts++; return nil }
-	if err := openConfig(fakeEditor(t, `{"public_url": "https://share.example.com"}`), restart); err != nil {
+	if err := openConfig(fakeEditor(t, `{"api_addr": "127.0.0.1:9999"}`), restart); err != nil {
 		t.Fatal(err)
 	}
-	if c, _ := loadConfig(); c.PublicURL != "https://share.example.com" {
+	if c, _ := loadConfig(); c.APIAddr != "127.0.0.1:9999" {
 		t.Errorf("config after edit = %+v", c)
 	}
 	if restarts != 1 {
-		t.Errorf("restarts = %d, want 1 after changing public_url", restarts)
+		t.Errorf("restarts = %d, want 1 after changing api_addr", restarts)
+	}
+}
+
+// public-url is read live by the server, so editing it must not bounce the server.
+func TestOpenConfigPublicURLEditDoesNotRestart(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	restart := func(string) error { t.Fatal("public_url is live; must not restart"); return nil }
+	if err := openConfig(fakeEditor(t, `{"public_url": "https://share.example.com"}`), restart); err != nil {
+		t.Fatal(err)
 	}
 }
 

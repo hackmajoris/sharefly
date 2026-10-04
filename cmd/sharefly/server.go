@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,6 +32,8 @@ type serverConfig struct {
 	publicAddr string
 	dataDir    string
 	publicURL  string
+	// publicURLFlag is true when --public-url pinned the URL; otherwise it follows the config file live
+	publicURLFlag bool
 }
 
 func parseServerFlags(args []string) (serverConfig, error) {
@@ -59,6 +62,7 @@ func parseServerFlags(args []string) (serverConfig, error) {
 	if cfg.dataDir, err = file.resolve(cfg.dataDir, dataDirKey); err != nil {
 		return cfg, err
 	}
+	cfg.publicURLFlag = cfg.publicURL != ""
 	if cfg.publicURL == "" {
 		cfg.publicURL = or(file.PublicURL, "http://"+cfg.publicAddr)
 	}
@@ -87,6 +91,9 @@ func runServer(args []string) error {
 		return err
 	}
 	api := &server.API{Store: store, DataDir: cfg.dataDir, PublicURL: cfg.publicURL, MaxBytes: maxUploadBytes}
+	if !cfg.publicURLFlag {
+		api.PublicURLFunc = newLivePublicURL(cfg.publicURL, cfg.publicAddr).get
+	}
 	sharesDir, tmpDir := api.SharesDir(), api.TmpDir()
 	for _, d := range []string{sharesDir, tmpDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -167,4 +174,51 @@ loop:
 		}
 	}
 	return serveErr
+}
+
+// livePublicURL re-reads public-url from the config file whenever the file changes, so editing the file (by any
+// means) changes new links without restarting the server. A broken file keeps the last good value.
+type livePublicURL struct {
+	mu         sync.Mutex
+	modTime    time.Time
+	url        string
+	publicAddr string
+}
+
+func newLivePublicURL(initial, publicAddr string) *livePublicURL {
+	l := &livePublicURL{url: initial, publicAddr: publicAddr}
+	l.modTime = configModTime()
+	return l
+}
+
+func configModTime() time.Time {
+	path, err := configPath()
+	if err != nil {
+		return time.Time{}
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
+func (l *livePublicURL) get() string {
+	mod := configModTime()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if mod.Equal(l.modTime) {
+		return l.url
+	}
+	l.modTime = mod
+	c, err := loadConfig()
+	if err != nil {
+		log.Printf("config: %v; links keep using %s", err, l.url)
+		return l.url
+	}
+	if u := or(c.PublicURL, "http://"+l.publicAddr); u != l.url {
+		log.Printf("public url changed to %s", u)
+		l.url = u
+	}
+	return l.url
 }

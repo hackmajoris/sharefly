@@ -295,3 +295,52 @@ func TestRunServerBindFailure(t *testing.T) {
 		}
 	}
 }
+
+// Editing public_url by any means (set, a GUI editor, by hand) must change new links without a restart;
+// a running server that kept serving 127.0.0.1 links after the user set a domain was the bug this guards.
+func TestLivePublicURLFollowsConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "sharefly", "config.json")
+	l := newLivePublicURL("http://127.0.0.1:8080", "127.0.0.1:8080")
+	if got := l.get(); got != "http://127.0.0.1:8080" {
+		t.Fatalf("initial = %q", got)
+	}
+	write := func(content string, mod time.Time) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	write(`{"public_url": "shared.example.dev"}`, now.Add(time.Second))
+	if got := l.get(); got != "https://shared.example.dev" {
+		t.Errorf("after edit = %q, want the new public url", got)
+	}
+	write(`{"public_url": "ftp://broken"}`, now.Add(2*time.Second))
+	if got := l.get(); got != "https://shared.example.dev" {
+		t.Errorf("broken file must keep the last good url, got %q", got)
+	}
+	write(`{}`, now.Add(3*time.Second))
+	if got := l.get(); got != "http://127.0.0.1:8080" {
+		t.Errorf("unset public_url must fall back to the file server address, got %q", got)
+	}
+}
+
+func TestPublicURLFlagPinsURL(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cfg, err := parseServerFlags([]string{"--public-url", "https://flag.example.com"})
+	if err != nil || !cfg.publicURLFlag {
+		t.Fatalf("publicURLFlag = %v, %v; an explicit flag must pin the url", cfg.publicURLFlag, err)
+	}
+	cfg, err = parseServerFlags(nil)
+	if err != nil || cfg.publicURLFlag {
+		t.Fatalf("publicURLFlag = %v, %v; without the flag the url follows the config", cfg.publicURLFlag, err)
+	}
+}
