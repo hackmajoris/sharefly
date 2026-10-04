@@ -1,5 +1,6 @@
 # where `make install` links the binary; override for a prefix that needs no privileges
 BINDIR ?= /usr/local/bin
+SITE_PORT ?= 8099
 
 all: test build
 
@@ -39,7 +40,12 @@ check: vet lint test
 run: build
 	.bin/sharefly server --data-dir .bin/data
 
+# preview the GitHub Pages site (site/) at http://127.0.0.1:$(SITE_PORT)/ until Ctrl-C
+site:
+	@echo "site on http://127.0.0.1:$(SITE_PORT)/"
+	python3 -m http.server $(SITE_PORT) --bind 127.0.0.1 --directory site
+
 clean:
 	rm -rf .bin dist
 
-.PHONY: all build install uninstall test vet lint fmt check run clean
+.PHONY: all build install uninstall test vet lint fmt check run site clean
