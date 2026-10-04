@@ -1,0 +1,24 @@
+services:
+  sharefly:
+    build: .
+    image: sharefly:local
+    restart: unless-stopped
+    environment:
+      SHAREFLY_PUBLIC_URL: ${SHAREFLY_PUBLIC_URL:?set SHAREFLY_PUBLIC_URL in .env}
+    ports:
+      # API on the tailnet only; the file server is reached by cloudflared over the compose network
+      - "${TAILSCALE_IP:?set TAILSCALE_IP in .env}:8787:8787"
+    volumes:
+      - data:/data
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - sharefly
+
+volumes:
+  data:

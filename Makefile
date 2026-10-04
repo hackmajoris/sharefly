@@ -33,10 +33,7 @@ fmt:
 	gofmt -s -w $(shell find . -type f -name "*.go")
 	goimports -w $(shell find . -type f -name "*.go")
 
-plist:
-	plutil -lint deploy/com.sharefly.server.plist
-
-check: vet lint plist test
+check: vet lint test
 	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "run make fmt" && exit 1)
 
 run: build
@@ -45,4 +42,4 @@ run: build
 clean:
 	rm -rf .bin dist
 
-.PHONY: all build install uninstall test vet lint fmt plist check run clean
+.PHONY: all build install uninstall test vet lint fmt check run clean

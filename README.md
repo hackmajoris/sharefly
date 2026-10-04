@@ -110,7 +110,7 @@ The next `serve` starts it again.
 | `can't reach sharefly server at ...` | For a remote server: check `tailscale status` and that the server is running. `SHAREFLY_SERVER` must include `http://`. |
 | `local server did not come up` | Read the log: `tail ~/.local/state/sharefly/server.log`. Usually ports 8787 or 8080 are taken: `lsof -iTCP:8787 -iTCP:8080 -sTCP:LISTEN`. |
 | `a sharefly server is answering ... but has no pid file` | A server started by an older version or with another `--data-dir` is still running. Stop it with the `kill` command from the message. |
-| Public link shows Cloudflare 502 | cloudflared can't reach the file server. sharefly must run on the same machine as cloudflared. |
+| Public link shows Cloudflare 502 | cloudflared can't reach the file server. Locally, sharefly must run on the same machine as cloudflared and the hostname must point at `127.0.0.1:8080`; with Docker Compose it must point at `http://sharefly:8080`. |
 | Public link shows `404 page not found` | The share expired or was deleted. Check `sharefly ls`. |
 | Links still show `127.0.0.1` after setting `SHAREFLY_PUBLIC_URL` | Run `sharefly stop`; the server reads the variable only when it starts. |
 
@@ -170,34 +170,33 @@ The archive may hold only regular files and directories with relative paths, at 
 
 ## Always-on server setup
 
-For macOS, run as a LaunchDaemon so it starts at boot.
+Runs sharefly and cloudflared with Docker Compose on any always-on machine with Docker (OrbStack, Docker Desktop, colima or Linux) and Tailscale.
 
-1. **Tunnel.** Do steps 1–2 of [Make links public](#make-links-public-with-a-cloudflare-tunnel) on this machine.
-2. **Binary.** `brew install --cask hackmajoris/apps/sharefly`.
-3. **Data dir.** Create it as your normal user, not with `sudo`. launchd won't create the log file's folder, and the server runs as your user.
+1. **Tunnel.** In the Cloudflare dashboard, create a tunnel as in step 1 of [Make links public](#make-links-public-with-a-cloudflare-tunnel), but point the public hostname at `http://sharefly:8080` (the container, not `127.0.0.1`). Copy the token. Don't install cloudflared on the host; it runs as a container.
+2. **Get the files.** Clone the repo (or copy `Dockerfile`, `compose.yaml`, `.dockerignore`, `go.mod`, `cmd/`, `pkg/`).
+3. **Configure.** Create a `.env` next to `compose.yaml`. It's git-ignored; the token is a secret.
    ```
-   mkdir -p ~/.local/state/sharefly
+   SHAREFLY_PUBLIC_URL=https://share.yourdomain.com
+   TAILSCALE_IP=100.x.y.z      # output of `tailscale ip -4`
+   TUNNEL_TOKEN=<token from step 1>
    ```
-4. **Plist.** Edit `deploy/com.sharefly.server.plist` and replace:
-   - `YOUR_USER` (4 places) with your username (`whoami`)
-   - `TAILSCALE_IP` with the output of `tailscale ip -4`
-   - `https://share.yourdomain.com` with your public hostname
-   - the binary path if not `/opt/homebrew/bin/sharefly` (Intel: `/usr/local/bin/sharefly`)
+4. **Start.**
+   ```
+   docker compose up -d --build
+   docker compose logs -f sharefly
+   ```
+5. **Use it** from other devices: `export SHAREFLY_SERVER=http://<server>:8787` (see [Share from any device](#share-from-any-device-always-on-server)).
 
-   Then load it:
-   ```
-   sudo cp deploy/com.sharefly.server.plist /Library/LaunchDaemons/
-   sudo chown root:wheel /Library/LaunchDaemons/com.sharefly.server.plist
-   sudo launchctl bootstrap system /Library/LaunchDaemons/com.sharefly.server.plist
-   tail -f ~/.local/state/sharefly/server.log
-   ```
-5. **No sleep.** System Settings → Energy → prevent automatic sleeping.
-6. **Headless boot.** The server can only listen on the tailnet IP once Tailscale is connected. The Tailscale GUI app connects only after a user logs in, so either run Tailscale as a system daemon (`brew install tailscale && sudo tailscaled install-system-daemon && sudo tailscale up`) or enable auto-login.
+What it does: the API is published only on `TAILSCALE_IP:8787`, so only your tailnet can manage shares. The file server is not published on the host at all; cloudflared reaches it over the compose network. Shares live in the `data` volume and survive restarts and rebuilds. Both containers restart automatically (`restart: unless-stopped`).
 
 Maintenance:
-- After `brew upgrade --cask sharefly`: `sudo launchctl kickstart -k system/com.sharefly.server`
-- After editing the plist: `sudo launchctl bootout system/com.sharefly.server`, then bootstrap again.
-- `server.log` is never rotated: truncate it now and then (`: > ~/.local/state/sharefly/server.log`) or add a `newsyslog` rule.
+- Update after `git pull`: `docker compose up -d --build`
+- Stop: `docker compose down` (add `-v` to also delete all shares)
+- Logs: `docker compose logs -f`
+
+Caveats:
+- **Boot.** OrbStack and Docker Desktop start only after you log in. Enable auto-login, or use colima as a launchd service or a Linux host for a true headless boot. Keep the machine from sleeping (macOS: System Settings → Energy).
+- **Tailscale first.** Docker can publish the API only once the tailnet IP exists. If the stack started before Tailscale connected, run `docker compose up -d` again.
 
 ## Good to know
 
@@ -206,15 +205,13 @@ Maintenance:
 - **Limits:** 100MB per upload (compressed and uncompressed), 10000 files.
 - **What gets uploaded:** empty folders aren't. `.git` and `.DS_Store` are skipped. Inside a folder, symlinks and other non-regular files are skipped with a warning, and a symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed.
 - **Data folder:** at startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. Don't put files there by hand.
-- **Network:** the file server binds `127.0.0.1` and is reached publicly only through cloudflared. sharefly never talks to cloudflared or the Cloudflare API.
+- **Network:** the file server is never exposed directly: locally it binds `127.0.0.1`, under Docker Compose it isn't published at all. It's reached publicly only through cloudflared. sharefly never talks to cloudflared or the Cloudflare API.
 
 ## Development
 
 ```
 make            # test + build
-make check      # vet, lint, plist lint, tests, gofmt check
+make check      # vet, lint, tests, gofmt check
 make run        # local server with data in .bin/data
 make install    # symlink .bin/sharefly into /usr/local/bin
 ```
-
-To release, push a `v*` tag. The release workflow runs GoReleaser, which publishes the GitHub release and updates the cask in `hackmajoris/homebrew-apps`. It needs a `GORELEASER_GITHUB_TOKEN` secret with write access to both repos.

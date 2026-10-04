@@ -1,3 +1,4 @@
 /sharefly
 /dist/
 /.bin/
+.env
