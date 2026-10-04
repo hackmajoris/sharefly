@@ -44,20 +44,22 @@ type configKey struct {
 	// derived keys default to another key's value, so the file keeps them empty to keep following it
 	derived     bool
 	defaultHelp string
+	// scheme is prepended when a URL value is given without one, e.g. a bare domain
+	scheme string
 }
 
 var configKeys = []configKey{
 	{
-		name: "public-url", help: "base URL for share links, e.g. https://share.example.com",
+		name: "public-url", help: "base URL for share links, e.g. share.example.com (https:// is added)",
 		field:    func(c *config) *string { return &c.PublicURL },
 		def:      func(c config) (string, error) { return "http://" + or(c.PublicAddr, defaultPublicAddr), nil },
-		validate: validateURL, serverSide: true, derived: true, defaultHelp: "http://<public-addr>",
+		validate: validateURL, serverSide: true, derived: true, defaultHelp: "http://<public-addr>", scheme: "https",
 	},
 	{
 		name: "server", help: "server API URL that serve, ls, rm, renew and stop talk to",
 		field:    func(c *config) *string { return &c.Server },
 		def:      func(c config) (string, error) { return "http://" + dialAddr(or(c.APIAddr, defaultAPIAddr)), nil },
-		validate: validateURL, derived: true, defaultHelp: "http://<api-addr>",
+		validate: validateURL, derived: true, defaultHelp: "http://<api-addr>", scheme: "http",
 	},
 	{
 		name: "data-dir", help: "where shares, the pid file and the server log live",
@@ -140,7 +142,33 @@ func configPath() (string, error) {
 	return filepath.Join(home, ".config", "sharefly", "config.json"), nil
 }
 
+// normalize fixes up a value the way a user most likely meant it: a URL without a scheme gets the key's scheme.
+func (k configKey) normalize(v string) string {
+	if k.scheme != "" && v != "" && !strings.Contains(v, "://") {
+		return k.scheme + "://" + v
+	}
+	return v
+}
+
+// loadConfig reads the config file and rejects invalid values, so every command fails loudly on a bad file.
 func loadConfig() (config, error) {
+	c, err := readConfig()
+	if err != nil {
+		return c, err
+	}
+	for _, k := range configKeys {
+		if v := *k.field(&c); v != "" {
+			if err := k.validate(v); err != nil {
+				path, _ := configPath()
+				return c, fmt.Errorf("bad config file %s: %s: %w (fix it with: sharefly config open)", path, k.name, err)
+			}
+		}
+	}
+	return c, nil
+}
+
+// readConfig parses the config file without validating values, so set and open can repair a broken file.
+func readConfig() (config, error) {
 	var c config
 	path, err := configPath()
 	if err != nil {
@@ -156,14 +184,11 @@ func loadConfig() (config, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
-		return c, fmt.Errorf("bad config file %s: %w", path, err)
+		return c, fmt.Errorf("bad config file %s: %w (fix it with: sharefly config open)", path, err)
 	}
 	for _, k := range configKeys {
-		if v := *k.field(&c); v != "" {
-			if err := k.validate(v); err != nil {
-				return c, fmt.Errorf("bad config file %s: %s: %w", path, k.name, err)
-			}
-		}
+		f := k.field(&c)
+		*f = k.normalize(*f)
 	}
 	return c, nil
 }
@@ -290,12 +315,13 @@ func openConfig(editor []string, restart func(oldDataDir string) error) error {
 	if err != nil {
 		return err
 	}
-	before, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	if err := saveConfig(before); err != nil {
-		return err
+	before, beforeErr := loadConfig()
+	if beforeErr == nil {
+		if err := saveConfig(before); err != nil {
+			return err
+		}
+	} else if _, statErr := os.Stat(path); statErr != nil {
+		return beforeErr
 	}
 	if editor == nil {
 		opener := "xdg-open"
@@ -317,6 +343,14 @@ func openConfig(editor []string, restart func(oldDataDir string) error) error {
 	after, err := loadConfig()
 	if err != nil {
 		return err
+	}
+	if beforeErr != nil {
+		// the old file was broken, so there is nothing to compare against; apply the repaired one
+		oldDataDir, _, err := after.value(dataDirKey)
+		if err != nil {
+			return err
+		}
+		return restart(oldDataDir)
 	}
 	oldDataDir, _, err := before.value(dataDirKey)
 	if err != nil {
@@ -370,12 +404,13 @@ func setConfig(name, value string, restart func(oldDataDir string) error) error 
 	if err != nil {
 		return err
 	}
+	value = k.normalize(value)
 	if value != "" {
 		if err := k.validate(value); err != nil {
 			return err
 		}
 	}
-	c, err := loadConfig()
+	c, err := readConfig()
 	if err != nil {
 		return err
 	}

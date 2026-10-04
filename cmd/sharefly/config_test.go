@@ -116,8 +116,8 @@ func TestSetConfigRejectsBadInput(t *testing.T) {
 		t.Errorf("unknown key: err = %v", err)
 	}
 	bad := map[string][]string{
-		"public-url":  {"share.example.com", "ftp://x", "https://"},
-		"server":      {"macmini:8787"},
+		"public-url":  {"ftp://x", "https://"},
+		"server":      {"ftp://macmini:8787"},
 		"data-dir":    {"relative/dir"},
 		"api-addr":    {"8787", "localhost"},
 		"public-addr": {"nope"},
@@ -388,5 +388,80 @@ func TestConfigHelpDocumentsEveryKey(t *testing.T) {
 		if !strings.Contains(out, cmd) {
 			t.Errorf("help is missing command %q", cmd)
 		}
+	}
+}
+
+// A bare domain is the obvious way to type a public URL; it must mean https, and a bare host:port for server http.
+func TestURLKeysAcceptValuesWithoutScheme(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	noop := func(string) error { return nil }
+	if err := setConfig("public-url", "share.example.com", noop); err != nil {
+		t.Fatal(err)
+	}
+	if err := setConfig("server", "macmini:8787", noop); err != nil {
+		t.Fatal(err)
+	}
+	c, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PublicURL != "https://share.example.com" || c.Server != "http://macmini:8787" {
+		t.Errorf("got public_url %q, server %q", c.PublicURL, c.Server)
+	}
+}
+
+// Hand-written files with a bare domain must load the same way.
+func TestLoadConfigNormalizesBareDomain(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfigFile(t, dir, `{"public_url": "shared.example.dev"}`)
+	c, err := loadConfig()
+	if err != nil || c.PublicURL != "https://shared.example.dev" {
+		t.Fatalf("loadConfig() = %q, %v", c.PublicURL, err)
+	}
+}
+
+func writeConfigFile(t *testing.T, dir, content string) {
+	t.Helper()
+	path := filepath.Join(dir, "sharefly", "config.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// `config open` is how users repair a broken file, so it must open even when the file doesn't load.
+func TestOpenConfigOpensBrokenFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfigFile(t, dir, `{"api_addr": "8787"}`)
+	if _, err := loadConfig(); err == nil {
+		t.Fatal("precondition: file should be invalid")
+	}
+	restarted := false
+	err := openConfig(fakeEditor(t, `{"api_addr": "127.0.0.1:9999"}`), func(string) error { restarted = true; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := loadConfig(); err != nil || c.APIAddr != "127.0.0.1:9999" {
+		t.Errorf("after repair: %+v, %v", c, err)
+	}
+	if !restarted {
+		t.Error("a repaired server config must be applied to a running server")
+	}
+}
+
+// `config set` must also be able to fix the value that makes the file invalid.
+func TestSetConfigRepairsInvalidValue(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeConfigFile(t, dir, `{"api_addr": "8787"}`)
+	if err := setConfig("api-addr", "127.0.0.1:8787", func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(); err != nil {
+		t.Errorf("file still invalid after set: %v", err)
 	}
 }
