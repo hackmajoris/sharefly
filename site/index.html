@@ -54,7 +54,7 @@ h1 { font: 800 clamp(28px, 5vw, 44px)/1.12 var(--mono); letter-spacing: -.04em; 
 /* the one orchestrated moment: commands type, output appears, then the link's fuse starts burning */
 .type { display: inline-block; overflow: hidden; vertical-align: bottom; white-space: pre; width: 0; animation: type .9s steps(var(--n)) forwards; animation-delay: var(--d); }
 .show { opacity: 0; animation: show .01s forwards; animation-delay: var(--d); }
-@keyframes type { to { width: calc(var(--n) * 1ch); } }
+@keyframes type { to { width: calc((var(--n) + 1) * 1ch); } }
 @keyframes show { to { opacity: 1; } }
 .fuse { display: block; height: 2px; margin: 4px 0 2px; background: var(--link); transform-origin: left; width: min(46ch, 100%);
   opacity: 0; animation: show .01s forwards, burn 40s linear forwards; animation-delay: var(--d), var(--d); }
