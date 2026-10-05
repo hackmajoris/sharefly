@@ -18,7 +18,7 @@ Works locally with zero config. Add a Cloudflare Tunnel and the links work for a
 ## Install
 
 ```
-brew install --cask hackmajoris/apps/sharefly
+brew install --cask hackmajoris/homebrew-apps/sharefly
 ```
 
 Upgrade with `brew upgrade --cask sharefly`. From source (Go 1.27.1+): `make build`, which puts the binary in `.bin/sharefly`.
