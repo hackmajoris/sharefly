@@ -23,6 +23,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	_ = os.Setenv("XDG_CONFIG_HOME", dir)
+	// and away from a sharefly service installed on the developer's machine
+	serviceFile = filepath.Join(dir, "no-service")
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

@@ -125,7 +125,16 @@ Pick one machine to host the shares (it needs the Cloudflare Tunnel from the pre
 
 The server runs until you stop it, the host sleeps or it reboots. After that, run `sharefly start` again (or just `sharefly serve` on the host). Shares on disk are kept and served again as soon as it starts.
 
-To have it start at boot and restart after a crash, run it under your system's service manager, e.g. a launchd LaunchDaemon on macOS or a systemd unit on Linux. Point the service at `sharefly server` (the foreground mode, which reads the same config file), not at `sharefly start`, which exits after launching the server.
+### Start the server at boot
+
+```
+sharefly stop                 # if one is running
+sharefly service install      # asks for sudo once
+```
+
+This installs a launchd daemon on macOS (`/Library/LaunchDaemons/dev.hackmajoris.sharefly.plist`) or a systemd unit on Linux (`/etc/systemd/system/sharefly.service`). It runs `sharefly server` as you, at boot and without a login, restarts it within 10 seconds if it exits, and keeps restarting until it can bind (for example until Tailscale is up). It reads your config file like any other server and logs to `<data-dir>/server.log`; `cloudflared` runs as its child.
+
+With the service installed, `sharefly stop` and `sharefly start` stop and start the service (both ask for sudo), `sharefly config set` restarts it, and `serve` never starts a second server next to it. `sharefly service status` shows its state; `sharefly service uninstall` removes it. After `brew upgrade`, run `sharefly stop && sharefly start` to pick up the new binary.
 
 ### Start and stop the server yourself
 
@@ -164,6 +173,7 @@ sharefly renew <id> [--ttl 7d] [--server URL]                                   
 sharefly start [flags]                                                             # start the server in the background
 sharefly server [flags]                                                            # run the server in the foreground
 sharefly stop [--data-dir DIR]                                                     # stop the local server
+sharefly service install | uninstall | status                                      # run the server at boot (launchd / systemd)
 sharefly config                                                                    # show settings and where they come from
 sharefly config set <key> <value>                                                  # save a setting
 sharefly config unset <key>                                                        # remove a setting

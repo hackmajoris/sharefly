@@ -17,6 +17,7 @@ commands:
   start     start the share server in the background (serve does this automatically)
   server    run the share server in the foreground
   stop      stop the local share server
+  service   run the server at boot: service install | uninstall | status
   config    show or change settings: config [set <key> <value> | unset <key> | open]
 
 run 'sharefly <command> -h' for a command's flags, 'sharefly config -h' for all settings
@@ -45,6 +46,8 @@ func run(args []string) int {
 		err = runStop(args[1:])
 	case "config":
 		err = runConfig(args[1:])
+	case "service":
+		err = runService(args[1:])
 	case "serve":
 		err = runServe(args[1:])
 	case "ls":

@@ -77,6 +77,20 @@ func runStart(args []string) error {
 	if err != nil {
 		return err
 	}
+	if serviceInstalled() {
+		if len(args) > 0 {
+			return errors.New("the service runs the server with the config file only; change settings with: sharefly config set")
+		}
+		c := &client.Client{BaseURL: "http://" + dialAddr(cfg.apiAddr)}
+		if _, err := c.List(); !errors.Is(err, client.ErrUnreachable) {
+			fmt.Printf("sharefly service already running on %s\n", cfg.apiAddr)
+			return nil
+		}
+		if err := runServiceAction("start", ""); err != nil {
+			return err
+		}
+		return waitReady(c, startWait, logPath(), 0)
+	}
 	return startBackground(cfg, args, spawnServer, startWait)
 }
 
@@ -190,6 +204,9 @@ func spawnLocalServer(apiAddr, tunnel string) (int, error) {
 	if _, err := parseServerFlags(args); err != nil {
 		return 0, err
 	}
+	if serviceInstalled() {
+		return 0, errors.New("the sharefly service is installed but not running; start it with: sharefly start")
+	}
 	pid, logFile, err := spawnServer(args, dir)
 	if err != nil {
 		return 0, err
@@ -241,6 +258,10 @@ func runStop(args []string) error {
 	}
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %v", fs.Args())
+	}
+	// a supervised server would come straight back after a signal; stop it through its service manager
+	if serviceInstalled() {
+		return runServiceAction("stop", "")
 	}
 	cfg, err := loadConfig()
 	if err != nil {

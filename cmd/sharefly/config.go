@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hackmajoris/sharefly/pkg/client"
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
@@ -471,6 +472,9 @@ func restartLocalServer(dataDir string) error {
 }
 
 func restartServer(dataDir string, spawn func(args []string, dataDir string) (int, string, error), wait time.Duration) error {
+	if serviceInstalled() {
+		return restartService(dataDir, wait)
+	}
 	args, err := readServerArgs(dataDir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -496,6 +500,25 @@ func restartServer(dataDir string, spawn func(args []string, dataDir string) (in
 	}
 	if err := startBackground(cfg, args, spawn, wait); err != nil {
 		return fmt.Errorf("restart server: %w", err)
+	}
+	return nil
+}
+
+// restartService applies a config change to the service's server: the service manager restarts it after a
+// SIGTERM, so starting one by hand here would only race it for the ports.
+func restartService(dataDir string, wait time.Duration) error {
+	cfg, err := parseServerFlags(nil)
+	if err != nil {
+		return fmt.Errorf("the running server was left as is: %w", err)
+	}
+	if err := stopServer(filepath.Join(dataDir, pidFileName), shutdownTimeout+time.Second); err != nil {
+		if errors.Is(err, errNotRunning) {
+			return nil
+		}
+		return err
+	}
+	if err := waitReady(&client.Client{BaseURL: "http://" + dialAddr(cfg.apiAddr)}, wait, filepath.Join(cfg.dataDir, logFileName), 0); err != nil {
+		return fmt.Errorf("restart service: %w", err)
 	}
 	return nil
 }
