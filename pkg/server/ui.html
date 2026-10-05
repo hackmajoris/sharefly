@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>sharefly shares</title>
+<style>
+:root {
+  --ink: #0F1828; --raised: #162238; --line: #24324D; --text: #E4E8F0; --muted: #8693AA;
+  --link: #F2B544; --ok: #8FE3C0; --bad: #F28B74;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html { background: var(--ink); color: var(--text); }
+body { margin: 0; font: 15px/1.5 var(--sans); }
+.page { max-width: 1040px; margin: 0 auto; padding: 28px 20px 64px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+h1 { margin: 0; font: 700 20px var(--mono); letter-spacing: -.02em; }
+h1 small { font: 400 14px var(--sans); color: var(--muted); margin-left: 10px; }
+a { color: var(--link); text-underline-offset: 3px; }
+button, select { font: 500 13.5px var(--sans); color: var(--text); background: var(--raised); border: 1px solid var(--line);
+  border-radius: 7px; padding: 6px 11px; cursor: pointer; }
+button:hover, select:hover { border-color: var(--muted); }
+button.danger { color: var(--bad); }
+button.danger:hover { border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+
+.msg { margin: 0 0 18px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
+.msg.err { border-color: var(--bad); color: var(--bad); }
+.msg[hidden] { display: none; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 600; font-size: 13px; color: var(--muted); padding: 0 12px 10px 0; border-bottom: 1px solid var(--line); }
+td { padding: 13px 12px 13px 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td.num { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+.name { font-weight: 600; word-break: break-all; }
+.name .lock { color: var(--ok); font-weight: 400; font-size: 13px; margin-left: 6px; }
+.url { display: block; font: 12.5px var(--mono); word-break: break-all; margin-top: 2px; }
+.id { font: 12px var(--mono); color: var(--muted); }
+.exp.soon { color: var(--link); }
+.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+.empty { padding: 48px 0; color: var(--muted); }
+.empty code { font: 14px var(--mono); color: var(--text); background: var(--raised); padding: 3px 8px; border-radius: 5px; }
+
+@media (max-width: 720px) {
+  thead { display: none; }
+  table, tbody, tr, td { display: block; }
+  tr { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  td { border: 0; padding: 3px 0; }
+  td:nth-child(2)::before { content: "Expires "; }
+  td:nth-child(3)::before { content: "Size "; }
+  .actions { justify-content: flex-start; margin-top: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>sharefly <small id="count"></small></h1>
+    <button type="button" id="refresh">Refresh</button>
+  </header>
+  <p class="msg" id="msg" role="status" hidden></p>
+  <table id="table" hidden>
+    <thead><tr><th>Share</th><th>Expires</th><th>Size</th><th aria-label="Actions"></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty" hidden>No shares yet. Share a file with <code>sharefly serve report.html</code>.</div>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  e.append(...kids);
+  return e;
+};
+
+function say(text, isError) {
+  const m = $("msg");
+  m.textContent = text;
+  m.className = isError ? "msg err" : "msg";
+  m.hidden = !text;
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let reason = res.status + " " + res.statusText;
+    try { reason = (await res.json()).error || reason; } catch {}
+    throw new Error(reason);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function size(bytes) {
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  return (i ? bytes.toFixed(1) : bytes) + " " + units[i];
+}
+
+function expiry(at) {
+  if (!at) return { text: "never", soon: false };
+  const ms = new Date(at) - Date.now();
+  const h = ms / 3.6e6;
+  const rel = ms <= 0 ? "expired" : h < 1 ? `in ${Math.max(1, Math.round(ms / 6e4))} min` : h < 48 ? `in ${Math.round(h)} h` : `in ${Math.round(h / 24)} days`;
+  return { text: rel, soon: h < 24, title: new Date(at).toLocaleString() };
+}
+
+function row(sh) {
+  const name = el("div", { className: "name", textContent: sh.name || sh.id });
+  if (sh.protected) name.append(el("span", { className: "lock", textContent: "password", title: "Visitors need the share's password" }));
+  const exp = expiry(sh.expires_at);
+
+  const copy = el("button", { type: "button", textContent: "Copy link" });
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(sh.url); say("Copied " + sh.url); }
+    catch { say("Copy failed; select the link and copy it.", true); }
+  };
+
+  const ttl = el("select", { ariaLabel: "Renew for" });
+  for (const [v, label] of [["1h", "1 hour"], ["1d", "1 day"], ["7d", "7 days"], ["30d", "30 days"], ["never", "never"]]) {
+    ttl.append(el("option", { value: v, textContent: label, selected: v === "7d" }));
+  }
+  const renew = el("button", { type: "button", textContent: "Renew" });
+  renew.onclick = async () => {
+    renew.disabled = true;
+    try {
+      await api("POST", `/shares/${encodeURIComponent(sh.id)}/renew`, { ttl: ttl.value });
+      say(`Renewed ${sh.name || sh.id}: expires ${ttl.value === "never" ? "never" : "in " + ttl.options[ttl.selectedIndex].text}.`);
+      await load();
+    } catch (e) { say("Renew failed: " + e.message, true); renew.disabled = false; }
+  };
+
+  const del = el("button", { type: "button", className: "danger", textContent: "Delete" });
+  del.onclick = async () => {
+    if (!confirm(`Delete ${sh.name || sh.id}? The link stops working at once.`)) return;
+    del.disabled = true;
+    try { await api("DELETE", `/shares/${encodeURIComponent(sh.id)}`); say(`Deleted ${sh.name || sh.id}.`); await load(); }
+    catch (e) { say("Delete failed: " + e.message, true); del.disabled = false; }
+  };
+
+  return el("tr", {},
+    el("td", {}, name, el("a", { className: "url", href: sh.url, target: "_blank", rel: "noopener", textContent: sh.url })),
+    el("td", { className: "num" }, el("span", { className: exp.soon ? "exp soon" : "exp", textContent: exp.text, title: exp.title || "" })),
+    el("td", { className: "num", textContent: size(sh.size) }),
+    el("td", {}, el("div", { className: "actions" }, copy, ttl, renew, del)),
+  );
+}
+
+async function load() {
+  try {
+    const shares = await api("GET", "/shares");
+    shares.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    $("rows").replaceChildren(...shares.map(row));
+    $("table").hidden = shares.length === 0;
+    $("empty").hidden = shares.length !== 0;
+    $("count").textContent = shares.length === 1 ? "1 share" : shares.length + " shares";
+  } catch (e) {
+    say("Couldn't load shares: " + e.message, true);
+  }
+}
+
+$("refresh").onclick = () => { say(""); load(); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>

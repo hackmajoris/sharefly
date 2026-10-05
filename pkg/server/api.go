@@ -37,7 +37,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("DELETE /shares/{id}", a.delete)
 	mux.HandleFunc("POST /shares/{id}/renew", a.renew)
 	mux.HandleFunc("GET /status", a.status)
-	return mux
+	mux.HandleFunc("GET /{$}", a.ui)
+	return guardBrowser(mux)
 }
 
 // Base returns the base URL links are built from.

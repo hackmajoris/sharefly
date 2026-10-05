@@ -66,7 +66,9 @@ func newTestAPI(t *testing.T, maxBytes int64) *API {
 func do(t *testing.T, a *API, method, path string, body io.Reader) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	a.Handler().ServeHTTP(rec, httptest.NewRequest(method, path, body))
+	req := httptest.NewRequest(method, path, body)
+	req.Host = "127.0.0.1:8787"
+	a.Handler().ServeHTTP(rec, req)
 	return rec
 }
 
@@ -351,8 +353,7 @@ func TestAPIUsesPublicURLFunc(t *testing.T) {
 func TestAPIStatusReportsPublicURL(t *testing.T) {
 	api := newTestAPI(t, 1<<20)
 	api.PublicURLFunc = func() string { return "https://x-y.trycloudflare.com" }
-	rec := httptest.NewRecorder()
-	api.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/status", nil))
+	rec := do(t, api, http.MethodGet, "/status", nil)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"public_url":"https://x-y.trycloudflare.com"`) {
 		t.Errorf("status = %d %s", rec.Code, rec.Body.String())
 	}

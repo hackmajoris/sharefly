@@ -68,6 +68,12 @@ https://share.yourdomain.com/k7f3x9qa2m/report.html
 
 The server generates the password and prints it once, on stderr, so `| pbcopy` still copies only the link. Visitors get a password page; after the right password, a cookie for that share keeps them in until the browser closes. Scripts can send it as HTTP Basic auth instead: `curl -u x:<password> <url>`. sharefly stores only a hash, so a lost password can't be shown again: `rm` the share and serve it again.
 
+### Manage shares in your browser
+
+Open the server's API address, e.g. `http://127.0.0.1:8787/`, or `http://<host-tailscale-name>:8787/` from another device. The page lists every share with its link, expiry, size and whether it has a password, and lets you copy a link, renew a share or delete it.
+
+The page is served only on `api-addr`, never on the public file server, so it is as private as the API: this machine, or your tailnet. It has no login of its own; anyone who can reach `api-addr` can use it, just like the CLI.
+
 ### Copy the link or open it right away
 
 ```
@@ -215,7 +221,9 @@ Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/co
 
 ### HTTP API
 
-The management API on `--api-addr` is plain HTTP + JSON. The CLI uses it; any other client can too.
+The management API on `--api-addr` is plain HTTP + JSON. The CLI uses it; any other client can too. `GET /` serves the management page.
+
+Browser requests from another site (an `Origin` that isn't the API's own address) get 403, so a web page you visit can't drive the API through your browser. The `Host` must be an IP address, `localhost`, a single-label name, or a `*.ts.net` / `*.local` name; other names get 403, which blocks DNS rebinding. Reaching the API under another DNS name isn't supported.
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
