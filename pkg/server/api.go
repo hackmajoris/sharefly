@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hackmajoris/sharefly/pkg/markdown"
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
@@ -36,6 +38,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /shares", a.list)
 	mux.HandleFunc("DELETE /shares/{id}", a.delete)
 	mux.HandleFunc("POST /shares/{id}/renew", a.renew)
+	mux.HandleFunc("GET /shares/{id}/markdown", a.markdownSource)
 	mux.HandleFunc("GET /status", a.status)
 	mux.HandleFunc("GET /{$}", a.ui)
 	return guardBrowser(mux)
@@ -191,6 +194,35 @@ func (a *API) renew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.response(sh))
+}
+
+// markdownSource serves the original Markdown of a share made from a .md file, as a download. The client embeds
+// it in the rendered page (markdown.Page), so it is read back from there.
+func (a *API) markdownSource(w http.ResponseWriter, r *http.Request) {
+	sh, err := a.Store.Get(r.PathValue("id"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if ext := strings.ToLower(filepath.Ext(sh.Name)); ext != ".md" && ext != ".markdown" {
+		writeError(w, http.StatusNotFound, "not a Markdown share")
+		return
+	}
+	page, err := os.ReadFile(filepath.Join(a.SharesDir(), sh.ID, filepath.FromSlash(sh.Entry)))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "share page not found")
+		return
+	}
+	src, ok := markdown.Source(page)
+	if !ok {
+		writeError(w, http.StatusNotFound, "this share has no embedded Markdown (shared by an older sharefly)")
+		return
+	}
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": sh.Name}))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", cacheControl)
+	_, _ = w.Write(src)
 }
 
 func (a *API) response(sh share.Share) share.Link {

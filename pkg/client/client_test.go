@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hackmajoris/sharefly/pkg/markdown"
 	"github.com/hackmajoris/sharefly/pkg/server"
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
@@ -323,5 +324,37 @@ func TestClientUploadWithPasswordFailsOnServerWithoutSupport(t *testing.T) {
 	}
 	if deleted != "old1234567" {
 		t.Fatalf("deleted %q; the unprotected share must be removed", deleted)
+	}
+}
+
+// `serve notes.md` must give a link that opens as a formatted page: the server stores notes.html with the
+// rendered document, so any server version serves it as HTML instead of raw Markdown text.
+func TestClientUploadRendersMarkdown(t *testing.T) {
+	c, dataDir := newTestServer(t)
+	f := filepath.Join(t.TempDir(), "notes.md")
+	if err := os.WriteFile(f, []byte("# Release notes\n\n- **fast**\n- <script>x</script>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	up, _, err := c.Upload(f, "1h", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Name != "notes.md" || !strings.HasSuffix(up.URL, "/"+up.ID+"/notes.html") {
+		t.Fatalf("upload = %+v; want the link to the rendered notes.html", up)
+	}
+	page, err := os.ReadFile(filepath.Join(dataDir, "shares", up.ID, "notes.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<title>Release notes</title>", `<h1 id="release-notes">Release notes</h1>`, "<strong>fast</strong>", "&lt;script&gt;"} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("rendered page misses %q", want)
+		}
+	}
+	if src, ok := markdown.Source(page); !ok || !strings.HasPrefix(string(src), "# Release notes") {
+		t.Errorf("the page must carry the original Markdown for its download link: %q, %v", src, ok)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "shares", up.ID, "notes.md")); !os.IsNotExist(err) {
+		t.Error("the raw Markdown must not be published next to the page")
 	}
 }

@@ -8,6 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/hackmajoris/sharefly/pkg/markdown"
 )
 
 func validate(path string) (fs.FileInfo, error) {
@@ -42,9 +45,12 @@ func archive(path string, fi fs.FileInfo, w io.Writer) (skipped []string, err er
 
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
-	if fi.IsDir() {
+	switch {
+	case fi.IsDir():
 		skipped, err = addDir(tw, root)
-	} else {
+	case isMarkdown(path):
+		err = addMarkdown(tw, root, filepath.Base(path), fi)
+	default:
 		err = addFile(tw, root, filepath.Base(path), fi)
 	}
 	if err != nil {
@@ -104,5 +110,32 @@ func addFile(tw *tar.Writer, path, name string, fi fs.FileInfo) error {
 		return err
 	}
 	_, err = io.Copy(tw, f)
+	return err
+}
+
+func isMarkdown(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".md" || ext == ".markdown"
+}
+
+// addMarkdown shares a Markdown file as the rendered page notes.md -> notes.html, so any server serves it as HTML.
+func addMarkdown(tw *tar.Writer, path, name string, fi fs.FileInfo) error {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	page := markdown.Page(src, base, name)
+	hdr := &tar.Header{
+		Name:     base + ".html",
+		Typeflag: tar.TypeReg,
+		Mode:     0o644,
+		Size:     int64(len(page)),
+		ModTime:  fi.ModTime(),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	_, err = tw.Write(page)
 	return err
 }

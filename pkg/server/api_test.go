@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hackmajoris/sharefly/pkg/markdown"
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
 
@@ -388,5 +389,27 @@ func TestAPIPasswordShownOnceNeverHash(t *testing.T) {
 	}
 	if rec := do(t, a, http.MethodPost, "/shares?password=hunter2", tarGz(t, regular("index.html", "x"))); rec.Code != http.StatusBadRequest {
 		t.Fatalf("chosen password: %d, want 400 (passwords are generated only)", rec.Code)
+	}
+}
+
+// The management page's "Download .md" returns the original Markdown as an attachment, and only for Markdown
+// shares: an HTML share has no source to give back.
+func TestAPIMarkdownSourceDownload(t *testing.T) {
+	a := newTestAPI(t, 1<<20)
+	src := []byte("# Notes\n\n- one\n")
+	md := decode[map[string]any](t, do(t, a, http.MethodPost, "/shares?name=notes.md", tarGz(t, regular("notes.html", string(markdown.Page(src, "notes", "notes.md"))))))["id"].(string)
+	plain := decode[map[string]any](t, do(t, a, http.MethodPost, "/shares?name=page.html", tarGz(t, regular("page.html", "<p>hi</p>"))))["id"].(string)
+
+	rec := do(t, a, http.MethodGet, "/shares/"+md+"/markdown", nil)
+	if rec.Code != http.StatusOK || rec.Body.String() != string(src) {
+		t.Fatalf("markdown download: %d %q", rec.Code, rec.Body)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); cd != "attachment; filename=notes.md" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("headers = %v; want an attachment named notes.md, nosniff", rec.Header())
+	}
+	for _, id := range []string{plain, "nonexistent"} {
+		if rec := do(t, a, http.MethodGet, "/shares/"+id+"/markdown", nil); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", id, rec.Code)
+		}
 	}
 }

@@ -23,6 +23,9 @@ a { color: var(--link); text-underline-offset: 3px; }
 button, select { font: 500 13.5px var(--sans); color: var(--text); background: var(--raised); border: 1px solid var(--line);
   border-radius: 7px; padding: 6px 11px; cursor: pointer; }
 button:hover, select:hover { border-color: var(--muted); }
+a.button { display: inline-block; font: 500 13.5px var(--sans); color: var(--text); background: var(--raised); border: 1px solid var(--line);
+  border-radius: 7px; padding: 6px 11px; text-decoration: none; }
+a.button:hover { border-color: var(--muted); }
 button.danger { color: var(--bad); }
 button.danger:hover { border-color: var(--bad); }
 button:disabled { opacity: .5; cursor: default; }
@@ -149,11 +152,17 @@ function row(sh) {
     catch (e) { say("Delete failed: " + e.message, true); del.disabled = false; }
   };
 
+  const actions = [copy];
+  if (/\.(md|markdown)$/i.test(sh.name || "")) {
+    actions.push(el("a", { className: "button", href: `/shares/${encodeURIComponent(sh.id)}/markdown`, download: sh.name, textContent: "Download .md" }));
+  }
+  actions.push(ttl, renew, del);
+
   return el("tr", {},
     el("td", {}, name, el("a", { className: "url", href: sh.url, target: "_blank", rel: "noopener", textContent: sh.url })),
     el("td", { className: "num" }, el("span", { className: exp.soon ? "exp soon" : "exp", textContent: exp.text, title: exp.title || "" })),
     el("td", { className: "num", textContent: size(sh.size) }),
-    el("td", {}, el("div", { className: "actions" }, copy, ttl, renew, del)),
+    el("td", {}, el("div", { className: "actions" }, ...actions)),
   );
 }
 

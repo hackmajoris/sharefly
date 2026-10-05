@@ -33,6 +33,14 @@ sharefly serve report.html
 
 The first `serve` starts a background server for you. The command prints only the link, so it's easy to script.
 
+### Share a Markdown file
+
+```
+sharefly serve notes.md       # → http://127.0.0.1:8080/<id>/notes.html
+```
+
+A single `.md` or `.markdown` file is shared as a formatted page: headings, lists and task lists, tables, code blocks, quotes, links and emphasis, in light or dark to match the reader's system. The page title is the first `# heading`, and a Download button at the top gives readers the original `.md` file (embedded in the page, so the share stays a single file). Raw HTML in the file shows as text, and links other than `http`, `https`, `mailto` and relative ones are dropped. Markdown files inside a shared folder are served as they are.
+
 ### Share a whole site
 
 ```
@@ -70,7 +78,7 @@ The server generates the password and prints it once, on stderr, so `| pbcopy` s
 
 ### Manage shares in your browser
 
-Open the server's API address, e.g. `http://127.0.0.1:8787/`, or `http://<host-tailscale-name>:8787/` from another device. The page lists every share with its link, expiry, size and whether it has a password, and lets you copy a link, renew a share or delete it.
+Open the server's API address, e.g. `http://127.0.0.1:8787/`, or `http://<host-tailscale-name>:8787/` from another device. The page lists every share with its link, expiry, size and whether it has a password, and lets you copy a link, renew a share or delete it. Markdown shares also have a Download .md button.
 
 The page is served only on `api-addr`, never on the public file server, so it is as private as the API: this machine, or your tailnet. It has no login of its own; anyone who can reach `api-addr` can use it, just like the CLI.
 
@@ -230,6 +238,7 @@ Browser requests from another site (an `Origin` that isn't the API's own address
 | `POST` | `/shares?ttl=7d&name=report.html[&password=1]` (tar.gz body; missing `ttl` = `7d`) | 201 record + `url` (+ `password` once) | 400 bad ttl, archive or `password` value, 413 body or uncompressed size over 100MB, 500 |
 | `GET` | `/shares` | 200 array of record + `url` | |
 | `DELETE` | `/shares/{id}` | 204 | 404, 500 |
+| `GET` | `/shares/{id}/markdown` | 200 the original Markdown as an attachment | 404 (unknown share, not a Markdown share, or shared by a version without embedded Markdown) |
 | `POST` | `/shares/{id}/renew` body `{"ttl":"7d"}` | 200 record + `url` | 400, 404 (also for an already-expired share), 500 |
 
 Record: `{"id","name","entry","size","created_at","expires_at","url","protected"}`; the upload response of a protected share also has `"password"`, and no response ever has it again. `entry` is the path opened by `url`, relative to the share (`""` = its `index.html`); `size` is uncompressed bytes; `expires_at: null` means never. Errors are `{"error":"..."}`.
