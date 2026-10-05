@@ -30,13 +30,13 @@ func TestParseServerFlagsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.apiAddr != "127.0.0.1:8787" {
+	if cfg.apiAddr != "127.0.0.1:7787" {
 		t.Errorf("api must default to loopback so nothing off-machine can manage shares, got %q", cfg.apiAddr)
 	}
-	if cfg.publicURL != "http://127.0.0.1:8080" {
+	if cfg.publicURL != "http://127.0.0.1:7788" {
 		t.Errorf("publicURL = %q, want links pointing at the local file server", cfg.publicURL)
 	}
-	if cfg.publicAddr != "127.0.0.1:8080" {
+	if cfg.publicAddr != "127.0.0.1:7788" {
 		t.Errorf("public listener must default to loopback so only cloudflared reaches it, got %q", cfg.publicAddr)
 	}
 	home, err := os.UserHomeDir()
@@ -303,8 +303,8 @@ func TestLivePublicURLFollowsConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	path := filepath.Join(dir, "sharefly", "config.json")
-	l := newLivePublicURL("http://127.0.0.1:8080", "127.0.0.1:8080")
-	if got := l.get(); got != "http://127.0.0.1:8080" {
+	l := newLivePublicURL("http://127.0.0.1:7788", "127.0.0.1:7788")
+	if got := l.get(); got != "http://127.0.0.1:7788" {
 		t.Fatalf("initial = %q", got)
 	}
 	write := func(content string, mod time.Time) {
@@ -329,7 +329,7 @@ func TestLivePublicURLFollowsConfigFile(t *testing.T) {
 		t.Errorf("broken file must keep the last good url, got %q", got)
 	}
 	write(`{}`, now.Add(3*time.Second))
-	if got := l.get(); got != "http://127.0.0.1:8080" {
+	if got := l.get(); got != "http://127.0.0.1:7788" {
 		t.Errorf("unset public_url must fall back to the file server address, got %q", got)
 	}
 }

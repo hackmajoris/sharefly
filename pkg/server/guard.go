@@ -8,7 +8,7 @@ import (
 )
 
 // guardBrowser keeps web pages from driving the API through a visitor's browser. The API has no login, so
-// without this any site the user opens could POST to 127.0.0.1:8787 (cross-site request) or rebind its own
+// without this any site the user opens could POST to 127.0.0.1:7787 (cross-site request) or rebind its own
 // name to it (DNS rebinding) and upload, renew or delete shares. The CLI sends no Origin and dials by IP or
 // local name, so it passes; the built-in GUI is same-origin.
 func guardBrowser(next http.Handler) http.Handler {

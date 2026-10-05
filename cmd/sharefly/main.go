@@ -12,6 +12,7 @@ const usage = `usage: sharefly <command> [flags]
 commands:
   serve     share a file or folder: serve <path> [--ttl 7d] [--server URL] [--tunnel quick] [--password]
   ls        list shares
+  dashboard open the page that lists, renews and deletes shares in your browser
   rm        delete a share: rm <id> | rm --all
   renew     extend a share: renew <id> [--ttl 7d]
   start     start the share server in the background (serve does this automatically)
@@ -52,6 +53,8 @@ func run(args []string) int {
 		err = runServe(args[1:])
 	case "ls":
 		err = runList(args[1:])
+	case "dashboard":
+		err = runDashboard(args[1:])
 	case "rm":
 		err = runRm(args[1:])
 	case "renew":

@@ -5,7 +5,7 @@ Share a static HTML file or folder via a link, straight from your terminal.
 ```
 $ sharefly serve report.html
 started local sharefly server (pid 4242, log ~/.local/state/sharefly/server.log)
-http://127.0.0.1:8080/k7f3x9qa2m/report.html
+http://127.0.0.1:7788/k7f3x9qa2m/report.html
 ```
 
 Works locally with zero config. Add a Cloudflare Tunnel and the links work for anyone on the internet. Start it on one machine with Tailscale and you can share from all your devices.
@@ -18,7 +18,7 @@ Works locally with zero config. Add a Cloudflare Tunnel and the links work for a
 ## Install
 
 ```
-brew install --cask hackmajoris/homebrew-apps/sharefly
+brew install --cask hackmajoris/apps/sharefly
 ```
 
 Upgrade with `brew upgrade --cask sharefly`. From source (Go 1.27.1+): `make build`, which puts the binary in `.bin/sharefly`.
@@ -36,7 +36,7 @@ The first `serve` starts a background server for you. The command prints only th
 ### Share a Markdown file
 
 ```
-sharefly serve notes.md       # → http://127.0.0.1:8080/<id>/notes.html
+sharefly serve notes.md       # → http://127.0.0.1:7788/<id>/notes.html
 ```
 
 A single `.md` or `.markdown` file is shared as a formatted page: headings, lists and task lists, tables, code blocks, quotes, links and emphasis, in light or dark to match the reader's system. The page title is the first `# heading`, and a Download button at the top gives readers the original `.md` file (embedded in the page, so the share stays a single file). Raw HTML in the file shows as text, and links other than `http`, `https`, `mailto` and relative ones are dropped. Markdown files inside a shared folder are served as they are.
@@ -78,7 +78,11 @@ The server generates the password and prints it once, on stderr, so `| pbcopy` s
 
 ### Manage shares in your browser
 
-Open the server's API address, e.g. `http://127.0.0.1:8787/`, or `http://<host-tailscale-name>:8787/` from another device. The page lists every share with its link, expiry, size and whether it has a password, and lets you copy a link, renew a share or delete it. Markdown shares also have a Download .md button.
+```
+sharefly dashboard            # opens it in your browser and prints the URL
+```
+
+It opens the page of the server your commands talk to (`server` setting or `--server`): `http://127.0.0.1:7787/` locally, or `http://<host-tailscale-name>:7787/` on a device pointed at another host. Like `serve`, it starts a local server first if none is running. The page lists every share with its link, expiry, size and whether it has a password, and lets you copy a link, renew a share or delete it. Markdown shares also have a Download .md button.
 
 The page is served only on `api-addr`, never on the public file server, so it is as private as the API: this machine, or your tailnet. It has no login of its own; anyone who can reach `api-addr` can use it, just like the CLI.
 
@@ -107,7 +111,7 @@ The address changes every time the server starts, so old links stop working afte
 
 You need a domain on Cloudflare.
 
-1. In the Cloudflare dashboard, go to Zero Trust → Networks → Tunnels and create a tunnel. On the install screen copy only the token (the long `eyJ…` string); don't run the install command. Add a public hostname, e.g. `share.yourdomain.com`, with service `HTTP` and URL `127.0.0.1:8080`. Leave Path empty.
+1. In the Cloudflare dashboard, go to Zero Trust → Networks → Tunnels and create a tunnel. On the install screen copy only the token (the long `eyJ…` string); don't run the install command. Add a public hostname, e.g. `share.yourdomain.com`, with service `HTTP` and URL `127.0.0.1:7788`. Leave Path empty.
 2. Give sharefly the token and your domain. The token is a secret: it's stored in the config file, which only you can read, and is never shown on the command line.
    ```
    brew install cloudflared
@@ -127,13 +131,13 @@ Pick one machine to host the shares (it needs the Cloudflare Tunnel from the pre
 
 1. On the host, make the server listen on its tailnet address:
    ```
-   sharefly config set api-addr "$(tailscale ip -4):8787"
+   sharefly config set api-addr "$(tailscale ip -4):7787"
    sharefly start
    ```
    The host's own `serve`, `ls`, `rm` and `renew` follow `api-addr` automatically, and `serve` still auto-starts the server there.
 2. On every other device, install sharefly and point it at the host:
    ```
-   sharefly config set server http://<host-tailscale-name-or-ip>:8787
+   sharefly config set server http://<host-tailscale-name-or-ip>:7787
    ```
 3. `sharefly serve`, `ls`, `rm` and `renew` now work against the host. A remote server is never auto-started.
 
@@ -165,9 +169,9 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 | Symptom | What to do |
 |---|---|
 | `can't reach sharefly server at ...` | For a remote server: check `tailscale status` and that the server is running. The `server` setting must include `http://` (`sharefly config` shows it). |
-| `local server did not come up` | Read the log: `tail ~/.local/state/sharefly/server.log`. Usually ports 8787 or 8080 are taken: `lsof -iTCP:8787 -iTCP:8080 -sTCP:LISTEN`. |
+| `local server did not come up` | Read the log: `tail ~/.local/state/sharefly/server.log`. Usually ports 7787 or 7788 are taken: `lsof -iTCP:7787 -iTCP:7788 -sTCP:LISTEN`. |
 | `a sharefly server is answering ... but has no pid file` | A server started by an older version or with another `--data-dir` is still running. Stop it with the `kill` command from the message. |
-| Public link shows Cloudflare 502 | cloudflared can't reach the file server. The sharefly server must be running, and the tunnel's hostname must point at `127.0.0.1:8080`. |
+| Public link shows Cloudflare 502 | cloudflared can't reach the file server. The sharefly server must be running, and the tunnel's hostname must point at `127.0.0.1:7788`. |
 | Public link shows Cloudflare 1033 | The tunnel is down. Look for `cloudflared:` lines in `~/.local/state/sharefly/server.log`; a wrong token shows up there. Check `sharefly config` for `tunnel` and `tunnel-token`. |
 | Public link gives a DNS error | The domain isn't Active on Cloudflare yet, or the tunnel has no public hostname. |
 | `tunnel is ... but cloudflared isn't installed` | `brew install cloudflared`. |
@@ -181,6 +185,7 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 ```
 sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M] [--password]   # upload, print only the URL
 sharefly ls [--server URL]                                                         # table: ID NAME EXPIRES URL
+sharefly dashboard [--server URL]                                                  # open the management page in your browser
 sharefly rm <id> [--server URL]                                                    # delete a share, prints nothing
 sharefly rm --all [--server URL]                                                   # delete every share, prints nothing
 sharefly renew <id> [--ttl 7d] [--server URL]                                      # reset expiry from now, prints the row
@@ -212,8 +217,8 @@ Settings live in `~/.config/sharefly/config.json` (`$XDG_CONFIG_HOME/sharefly/co
 | `public-url` | `http://<public-addr>` | server | base URL for share links |
 | `server` | `http://<api-addr>` | `serve`, `ls`, `rm`, `renew`, `stop` | server API URL to talk to, with scheme |
 | `data-dir` | `~/.local/state/sharefly` (`$XDG_STATE_HOME/sharefly` if set) | server, `stop` | holds `shares/`, `tmp/`, `shares.json`, `server.pid`, `server.args.json`, `server.log` |
-| `api-addr` | `127.0.0.1:8787` | server | management API listen address; the tailnet IP accepts other devices |
-| `public-addr` | `127.0.0.1:8080` | server | file server listen address (what cloudflared points at) |
+| `api-addr` | `127.0.0.1:7787` | server | management API listen address; the tailnet IP accepts other devices |
+| `public-addr` | `127.0.0.1:7788` | server | file server listen address (what cloudflared points at) |
 | `tunnel` | `off` | server | `off`, `quick` (random trycloudflare.com URL; links use it automatically) or `token` (your tunnel) |
 | `tunnel-token` | none | server | Cloudflare tunnel token for `tunnel=token`; secret, shown hidden, no flag |
 | `ttl` | `7d` | `serve` | default link lifetime |

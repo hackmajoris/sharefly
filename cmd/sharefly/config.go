@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	defaultPublicAddr = "127.0.0.1:8080"
+	defaultPublicAddr = "127.0.0.1:7788"
 	defaultTTL        = "7d"
 )
 
@@ -251,7 +251,7 @@ func validateURL(raw string) error {
 
 func validateAddr(raw string) error {
 	if _, port, err := net.SplitHostPort(raw); err != nil || port == "" {
-		return fmt.Errorf("%q is not a host:port address like 127.0.0.1:8787", raw)
+		return fmt.Errorf("%q is not a host:port address like 127.0.0.1:7787", raw)
 	}
 	return nil
 }

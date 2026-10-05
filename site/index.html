@@ -23,11 +23,11 @@
 * { box-sizing: border-box; }
 html { background: var(--ink); color: var(--text); -webkit-text-size-adjust: 100%; }
 body { margin: 0; font: 17px/1.6 var(--sans); }
-.page { max-width: 760px; margin: 0 auto; padding: 0 20px 96px; }
+.page { max-width: 920px; margin: 0 auto; padding: 0 20px 96px; }
 a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover { text-decoration-thickness: 2px; }
 :focus-visible { outline: 2px solid var(--link); outline-offset: 3px; border-radius: 3px; }
-code, pre, .mono, h1, h2, .mark, dl.cmds dt, td:first-child, th { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+code, pre, .mono, h1, h2, .mark { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 code, pre, .mono { font-family: var(--mono); }
 :not(pre) > code { font-size: .82em; padding: .1em .35em; border-radius: 4px; background: var(--raised); }
 
@@ -41,6 +41,7 @@ code, pre, .mono { font-family: var(--mono); }
 /* hero */
 h1 { font: 800 clamp(28px, 5vw, 44px)/1.12 var(--mono); letter-spacing: -.04em; margin: 72px 0 20px; text-wrap: balance; }
 .lede { font-size: 19px; color: #C3CAD8; max-width: 58ch; margin: 0 0 36px; }
+.term, .install { max-width: 760px; }
 
 .term { background: var(--raised); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .term-top { display: flex; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
@@ -73,15 +74,17 @@ h2 { font: 600 22px/1.3 var(--mono); letter-spacing: -.02em; margin: 0 0 8px; }
 h2 + p { margin-top: 0; color: #C3CAD8; }
 p { max-width: 64ch; }
 
-dl.cmds { margin: 28px 0 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); border-top: 1px solid var(--line); }
-dl.cmds dt, dl.cmds dd { margin: 0; padding: 14px 0; border-bottom: 1px solid var(--line); }
-dl.cmds dt { font: 13.5px/1.6 var(--mono); padding-right: 24px; }
-dl.cmds dd { color: #C3CAD8; font-size: 15.5px; }
-
-table { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 15.5px; }
-th { text-align: left; font: 600 13px var(--mono); color: var(--muted); padding: 0 16px 10px 0; border-bottom: 1px solid var(--line); }
-td { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; color: #C3CAD8; }
-td:first-child { font: 13.5px/1.6 var(--mono); color: var(--text); white-space: nowrap; }
+/* feature boxes: each starts with the command that does it */
+.group + .group { margin-top: 56px; }
+.feats { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 14px; margin-top: 22px; }
+.feats.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.feat { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); overflow: hidden; }
+.feat pre { margin: 0; padding: 11px 14px; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word;
+  background: var(--ink); border-bottom: 1px solid var(--line); }
+.feat pre .nw { white-space: nowrap; }
+.feat h3 { font: 600 16px/1.35 var(--sans); margin: 16px 16px 6px; }
+.feat p { margin: 0 16px 18px; font-size: 15px; line-height: 1.55; color: #C3CAD8; }
+.group-title { font: 600 15px/1.4 var(--sans); color: var(--muted); margin: 32px 0 0; }
 
 ol.flow { list-style: none; counter-reset: s; padding: 0; margin: 28px 0 0; }
 ol.flow li { counter-increment: s; display: grid; grid-template-columns: 44px 1fr; padding: 12px 0; border-bottom: 1px solid var(--line); color: #C3CAD8; }
@@ -97,16 +100,9 @@ footer a { color: var(--muted); }
 
 @media (max-width: 640px) {
   body { font-size: 16px; }
+  .feats.two { grid-template-columns: minmax(0, 1fr); }
   h1 { margin-top: 48px; }
   section { margin-top: 72px; }
-  dl.cmds { grid-template-columns: 1fr; }
-  dl.cmds dt { border-bottom: 0; padding-bottom: 2px; }
-  dl.cmds dd { padding-top: 0; }
-  thead { display: none; }
-  table, tbody, tr, td { display: block; }
-  tr { padding: 14px 0; border-bottom: 1px solid var(--line); }
-  td { padding: 2px 0; border: 0; }
-  td:last-child::before { content: "You need: "; color: var(--muted); }
   .bar nav { gap: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -127,11 +123,11 @@ footer a { color: var(--muted); }
   <h1>Send a web page as a link.</h1>
   <p class="lede">sharefly uploads a static HTML file or folder from your terminal and prints a link. It works on your machine with zero setup, and for anyone on the internet once you add a Cloudflare Tunnel.</p>
 
-  <div class="term" role="img" aria-label="Terminal: sharefly serve report.html starts a local server and prints http://127.0.0.1:8080/k7f3x9qa2m/report.html. After sharefly config set tunnel quick, the same command prints a public trycloudflare.com link.">
+  <div class="term" role="img" aria-label="Terminal: sharefly serve report.html starts a local server and prints http://127.0.0.1:7788/k7f3x9qa2m/report.html. After sharefly config set tunnel quick, the same command prints a public trycloudflare.com link.">
     <div class="term-top" aria-hidden="true"><i></i><i></i><i></i></div>
 <pre aria-hidden="true"><span class="p">$ </span><span class="type" style="--n: 26; --d: .3s">sharefly serve report.html</span>
 <span class="show out" style="--d: 1.4s">started local sharefly server (pid 4242, log ~/.local/state/sharefly/server.log)</span>
-<span class="show url" style="--d: 1.8s">http://127.0.0.1:8080/k7f3x9qa2m/report.html</span>
+<span class="show url" style="--d: 1.8s">http://127.0.0.1:7788/k7f3x9qa2m/report.html</span>
 
 <span class="show" style="--d: 2.4s"><span class="p">$ </span></span><span class="type" style="--n: 32; --d: 2.5s">sharefly config set tunnel quick</span>
 <span class="show" style="--d: 3.6s"><span class="p">$ </span></span><span class="type" style="--n: 26; --d: 3.7s">sharefly serve report.html</span>
@@ -145,40 +141,88 @@ footer a { color: var(--muted); }
     <small>Builds for macOS and Linux, or build from source with Go.</small>
   </div>
 
-  <section id="commands" aria-labelledby="h-commands">
-    <h2 id="h-commands">Everyday commands</h2>
-    <p>The first <code>serve</code> starts a background server for you. It prints only the link, so it pipes into <code>pbcopy</code> or <code>open</code>.</p>
-    <dl class="cmds">
-      <dt>sharefly serve report.html</dt><dd>Share one file. Any file name works.</dd>
-      <dt>sharefly serve ./site</dt><dd>Share a folder with an <code>index.html</code> at its root. Use relative links inside it.</dd>
-      <dt>sharefly serve report.html --ttl 1h</dt><dd>Choose how long the link lives: <code>30m</code>, <code>1h</code>, <code>3d</code> or <code>never</code>. Default is 7 days.</dd>
-      <dt>sharefly ls</dt><dd>See every share with its expiry and link.</dd>
-      <dt>sharefly renew &lt;id&gt; --ttl 7d</dt><dd>Push a link's expiry out from now.</dd>
-      <dt>sharefly rm &lt;id&gt;</dt><dd>Delete a share. The link stops working at once.</dd>
-    </dl>
+  <section id="features" aria-labelledby="h-features">
+    <h2 id="h-features">What you can do with it</h2>
+    <p>Every box starts with the command that does it.</p>
+
+    <div class="group" aria-labelledby="h-share">
+      <h3 class="group-title" id="h-share">Share</h3>
+      <div class="feats two">
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html</pre>
+          <h3>Send one page</h3><p>Any HTML file, any name. The first run starts a background server for you and prints the link.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve ./site</pre>
+          <h3>Send a whole site</h3><p>A folder with an <code>index.html</code> at its root, with its CSS, scripts and images. Use relative links inside it.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve notes.md</pre>
+          <h3>Send Markdown as a formatted page</h3><p>Headings, tables, task lists and code come out readable in light or dark, with a button to download the original <code>.md</code>.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html | pbcopy</pre>
+          <h3>Script it</h3><p><code>serve</code> prints only the link, so it pipes into <code>pbcopy</code>, <code>open</code> or your own scripts.</p></article>
+      </div>
+    </div>
+
+    <div class="group" aria-labelledby="h-reach">
+      <h3 class="group-title" id="h-reach">Choose who can open it</h3>
+      <div class="feats two">
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html</pre>
+          <h3>Keep it on this machine</h3><p>The default. Links point at <code>127.0.0.1</code> and nothing leaves your computer.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html <span class="nw">--tunnel</span> quick</pre>
+          <h3>Make it public in seconds</h3><p>A random <code>trycloudflare.com</code> address, no account or domain. Needs <code>cloudflared</code>; the address changes when the server restarts.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly config set tunnel token</pre>
+          <h3>Use your own domain</h3><p>Links on your Cloudflare domain that keep working. sharefly runs <code>cloudflared</code> for you and never calls the Cloudflare API.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly config set server hlab:7787</pre>
+          <h3>Share from all your devices</h3><p>Run the server on one machine in your Tailscale network and point every other device at it.</p></article>
+      </div>
+    </div>
+
+    <div class="group" aria-labelledby="h-control">
+      <h3 class="group-title" id="h-control">Stay in control</h3>
+      <div class="feats">
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html <span class="nw">--ttl</span> 1h</pre>
+          <h3>Links that expire</h3><p>Pick <code>30m</code>, <code>1h</code>, <code>3d</code> or <code>never</code>; the default is 7 days. <code>renew</code> extends a link, <code>rm</code> ends it at once.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html <span class="nw">--password</span>
+<span class="out">password: k7f3-x9qa-2mzt-c4wq</span></pre>
+          <h3>Lock a share with a password</h3><p>sharefly generates one and shows it once. Visitors get a password page; it goes to stderr, so pipes still get only the link.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly dashboard</pre>
+          <h3>Manage shares in your browser</h3><p>Opens a private page for the server you use, on this machine or your Tailscale host: every share with copy, renew and delete. It's never reachable through the public tunnel.</p></article>
+      </div>
+    </div>
+
+    <div class="group" aria-labelledby="h-run">
+      <h3 class="group-title" id="h-run">Run it your way</h3>
+      <div class="feats">
+        <article class="feat"><pre><span class="p">$ </span>sharefly service install</pre>
+          <h3>Start at boot</h3><p>Installs a launchd service on macOS or a systemd unit on Linux that restarts the server if it stops.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly config</pre>
+          <h3>One settings file</h3><p>Every setting with where it comes from. Flags override the file for a single command; there are no environment variables to track.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly ls</pre>
+          <h3>See everything at a glance</h3><p>Every share with its ID, name, expiry and link, in local time.</p></article>
+      </div>
+    </div>
   </section>
 
-  <section id="public" aria-labelledby="h-public">
-    <h2 id="h-public">Who can open the link</h2>
-    <p>sharefly runs <code>cloudflared</code> itself when you turn a tunnel on. It never calls the Cloudflare API.</p>
-    <table>
-      <thead><tr><th>Setting</th><th>Who can open it</th><th>What you need</th></tr></thead>
-      <tbody>
-        <tr><td>tunnel off</td><td>Only this machine. The default.</td><td>Nothing.</td></tr>
-        <tr><td>tunnel quick</td><td>Anyone with the link, at a random <code>trycloudflare.com</code> address that changes on each server start.</td><td><code>brew install cloudflared</code></td></tr>
-        <tr><td>tunnel token</td><td>Anyone with the link, on your own domain. Links that last.</td><td>A domain on Cloudflare and a tunnel token.</td></tr>
-        <tr><td>api-addr on Tailscale</td><td>Share from every device on your tailnet through one host.</td><td>Tailscale on each device.</td></tr>
-      </tbody>
-    </table>
-  </section>
+  <section id="tunnel" aria-labelledby="h-tunnel">
+    <h2 id="h-tunnel">Make links public with a Cloudflare Tunnel</h2>
+    <p>sharefly runs <code>cloudflared</code> for you, restarts it if it crashes and stops it with the server. Pick the quick tunnel to try it, your own domain for links that last.</p>
 
-  <section id="password" aria-labelledby="h-password">
-    <h2 id="h-password">Lock a share with a password</h2>
-    <p>Add <code>--password</code> and sharefly generates one. Visitors see a password page; the right password keeps them in until the browser closes.</p>
-<pre class="block"><span class="p">$ </span>sharefly serve report.html --password
-<span class="out">password: k7f3-x9qa-2mzt-c4wq (shown only now)</span>
-<span class="url">https://share.yourdomain.com/k7f3x9qa2m/report.html</span></pre>
-    <p class="small">The password goes to stderr, so <code>| pbcopy</code> still copies only the link. sharefly keeps only a hash: if you lose the password, delete the share and serve it again.</p>
+    <h3 class="group-title">Quick tunnel: no account, no domain</h3>
+<pre class="block"><span class="p">$ </span>brew install cloudflared
+<span class="p">$ </span>sharefly config set tunnel quick
+<span class="p">$ </span>sharefly serve report.html
+<span class="url">https://&lt;random-words&gt;.trycloudflare.com/&lt;id&gt;/report.html</span></pre>
+    <p class="small">The address changes every time the server starts, so links stop working after <code>sharefly stop</code>.</p>
+
+    <h3 class="group-title">Your own domain: needs a domain on Cloudflare</h3>
+    <ol class="flow">
+      <li><span><b>Create a tunnel</b> in the Cloudflare dashboard under Zero Trust, Networks, Tunnels. On the install screen, copy only the token (the long <code>eyJ…</code> string); don't run the install command.</span></li>
+      <li><span><b>Add a public hostname</b> to the tunnel, e.g. <code>share.yourdomain.com</code>, with service <code>HTTP</code> and URL <code>127.0.0.1:7788</code>.</span></li>
+      <li><span><b>Give sharefly the token and the hostname.</b> The token is stored in your config file, readable only by you, and never appears on the command line.</span></li>
+    </ol>
+<pre class="block"><span class="p">$ </span>brew install cloudflared
+<span class="p">$ </span>sharefly config set tunnel-token eyJ...
+<span class="p">$ </span>sharefly config set public-url share.yourdomain.com
+<span class="p">$ </span>sharefly config set tunnel token
+<span class="p">$ </span>sharefly serve report.html
+<span class="url">https://share.yourdomain.com/&lt;id&gt;/report.html</span></pre>
+    <p class="small">If you installed <code>cloudflared</code> as a system service before, remove it with <code>sudo cloudflared service uninstall</code> so two connectors don't share the tunnel.</p>
   </section>
 
   <section id="how" aria-labelledby="h-how">

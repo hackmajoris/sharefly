@@ -155,7 +155,7 @@ func TestShowConfigListsEffectiveValues(t *testing.T) {
 		"config.json",
 		"https://file.example.com", "(config)",
 		"/tmp/state/sharefly", "(default)",
-		"127.0.0.1:8787", "127.0.0.1:8080", "7d",
+		"127.0.0.1:7787", "127.0.0.1:7788", "7d",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
@@ -323,7 +323,7 @@ func TestSavedConfigListsEveryKeyWithDefaults(t *testing.T) {
 	}
 	want := map[string]string{
 		"public_url": "", "server": "",
-		"data_dir": "/tmp/state/sharefly", "api_addr": "127.0.0.1:8787", "public_addr": "127.0.0.1:8080", "ttl": "7d",
+		"data_dir": "/tmp/state/sharefly", "api_addr": "127.0.0.1:7787", "public_addr": "127.0.0.1:7788", "ttl": "7d",
 		"tunnel": "off", "tunnel_token": "",
 	}
 	if len(raw) != len(want) {
@@ -380,7 +380,7 @@ func TestOpenConfigFillsExistingEmptyFileWithoutRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"api_addr": "127.0.0.1:8787"`) {
+	if !strings.Contains(string(data), `"api_addr": "127.0.0.1:7787"`) {
 		t.Errorf("file not filled with defaults:\n%s", data)
 	}
 }
@@ -472,7 +472,7 @@ func TestSetConfigRepairsInvalidValue(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	writeConfigFile(t, dir, `{"api_addr": "8787"}`)
-	if err := setConfig("api-addr", "127.0.0.1:8787", func(string) error { return nil }); err != nil {
+	if err := setConfig("api-addr", "127.0.0.1:7787", func(string) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadConfig(); err != nil {

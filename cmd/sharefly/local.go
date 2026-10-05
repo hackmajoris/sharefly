@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	defaultAPIAddr = "127.0.0.1:8787"
+	defaultAPIAddr = "127.0.0.1:7787"
 	pidFileName    = "server.pid"
 	argsFileName   = "server.args.json"
 	logFileName    = "server.log"

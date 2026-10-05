@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"runtime"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -97,6 +100,35 @@ func runServe(args []string) error {
 		fmt.Fprintf(os.Stderr, "password: %s (shown only now)\n", sh.Password)
 	}
 	fmt.Println(sh.URL)
+	return nil
+}
+
+// openBrowser opens a URL in the default browser; tests replace it.
+var openBrowser = func(url string) error {
+	name := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		name = "open"
+	}
+	return exec.Command(name, url).Run()
+}
+
+// runDashboard opens the server's management page, starting a local server first when needed, like serve.
+func runDashboard(args []string) error {
+	c, _, err := parseClientArgs("dashboard", args, 0, nil, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	if err := ensureLocalServer(c, "", spawnLocalServer, startWait); err != nil {
+		return err
+	}
+	if _, err := c.List(); err != nil {
+		return err
+	}
+	url := strings.TrimSuffix(c.BaseURL, "/") + "/"
+	fmt.Println(url)
+	if err := openBrowser(url); err != nil {
+		fmt.Fprintf(os.Stderr, "couldn't open a browser (%v); open the URL above yourself\n", err)
+	}
 	return nil
 }
 

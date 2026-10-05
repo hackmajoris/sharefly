@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -166,5 +167,42 @@ func TestRunServeWithPasswordKeepsStdoutURLOnly(t *testing.T) {
 	}
 	if want := "https://share.example.com/" + shares[0].ID + "/report.html\n"; out != want {
 		t.Fatalf("stdout = %q, want only %q", out, want)
+	}
+}
+
+// `sharefly dashboard` must open the configured server's page (so on a laptop pointed at hlab it opens hlab's)
+// and print the URL for terminals without a browser; it must not open a page for a server that isn't there.
+func TestRunDashboard(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"shares", "tmp"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := share.Open(filepath.Join(dir, "shares.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer((&server.API{Store: store, DataDir: dir, PublicURL: "https://share.example.com", MaxBytes: 1 << 20}).Handler())
+	t.Cleanup(ts.Close)
+
+	var opened []string
+	old := openBrowser
+	t.Cleanup(func() { openBrowser = old })
+	openBrowser = func(url string) error { opened = append(opened, url); return nil }
+
+	code, out := captureStdout(t, func() int { return run([]string{"dashboard", "--server", ts.URL}) })
+	if code != 0 || out != ts.URL+"/\n" || len(opened) != 1 || opened[0] != ts.URL+"/" {
+		t.Fatalf("dashboard: code %d, stdout %q, opened %v", code, out, opened)
+	}
+
+	opened = nil
+	if code := run([]string{"dashboard", "--server", "http://macmini.invalid:8787"}); code != 1 || len(opened) != 0 {
+		t.Fatalf("unreachable remote server: code %d, opened %v; want an error and no browser", code, opened)
+	}
+
+	openBrowser = func(string) error { return errors.New("no display") }
+	if code, out := captureStdout(t, func() int { return run([]string{"dashboard", "--server", ts.URL}) }); code != 0 || out != ts.URL+"/\n" {
+		t.Fatalf("without a browser: code %d, stdout %q; want the URL printed and success", code, out)
 	}
 }
