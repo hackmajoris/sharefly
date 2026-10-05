@@ -15,7 +15,7 @@
 * { box-sizing: border-box; }
 html { background: var(--ink); color: var(--text); }
 body { margin: 0; font: 15px/1.5 var(--sans); }
-.page { max-width: 1040px; margin: 0 auto; padding: 28px 20px 64px; }
+.page { max-width: 1240px; margin: 0 auto; padding: 28px 20px 64px; }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 h1 { margin: 0; font: 700 20px var(--mono); letter-spacing: -.02em; }
 h1 small { font: 400 14px var(--sans); color: var(--muted); margin-left: 10px; }
@@ -31,7 +31,7 @@ button.danger:hover { border-color: var(--bad); }
 button:disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
-.msg { margin: 0 0 18px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
+.msg { position: sticky; top: 8px; z-index: 1; margin: 0 0 18px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); }
 .msg.err { border-color: var(--bad); color: var(--bad); }
 .msg[hidden] { display: none; }
 
@@ -41,22 +41,37 @@ td { padding: 13px 12px 13px 0; border-bottom: 1px solid var(--line); vertical-a
 td.num { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
 .name { font-weight: 600; word-break: break-all; }
 .name .lock { color: var(--ok); font-weight: 400; font-size: 13px; margin-left: 6px; }
-.url { display: block; font: 12.5px var(--mono); word-break: break-all; margin-top: 2px; }
+td:first-child { width: 100%; max-width: 0; }
+.url { display: block; font: 12.5px var(--mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .id { font: 12px var(--mono); color: var(--muted); }
 .exp.soon { color: var(--link); }
-.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; }
+.actions > * { white-space: nowrap; }
 
 .empty { padding: 48px 0; color: var(--muted); }
 .empty code { font: 14px var(--mono); color: var(--text); background: var(--raised); padding: 3px 8px; border-radius: 5px; }
 
+/* phones: each share is a card; actions are a two-row grid of thumb-sized buttons */
 @media (max-width: 720px) {
+  .page { padding-top: 18px; }
+  header button { min-height: 44px; padding: 0 16px; }
   thead { display: none; }
-  table, tbody, tr, td { display: block; }
-  tr { padding: 14px 0; border-bottom: 1px solid var(--line); }
-  td { border: 0; padding: 3px 0; }
-  td:nth-child(2)::before { content: "Expires "; }
-  td:nth-child(3)::before { content: "Size "; }
-  .actions { justify-content: flex-start; margin-top: 8px; }
+  table, tbody { display: block; }
+  tbody { display: grid; gap: 12px; }
+  tr { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; padding: 14px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
+  td, td:first-child { display: block; width: auto; max-width: none; min-width: 0; border: 0; padding: 0; }
+  td:nth-child(1), td:nth-child(4) { grid-column: 1 / -1; }
+  td:nth-child(2), td:nth-child(3) { padding-top: 8px; font-size: 14px; }
+  td:nth-child(2)::before { content: "Expires "; color: var(--muted); }
+  td:nth-child(4) { padding-top: 14px; }
+  .url { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; padding: 4px 0; }
+  .actions { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+  .actions > * { min-height: 44px; font-size: 15px; }
+  .actions a.button { display: flex; align-items: center; justify-content: center; }
+  .a-copy, .a-dl { grid-column: span 3; }
+  .a-copy.solo { grid-column: span 6; }
+  .a-ttl, .a-renew, .a-del { grid-column: span 2; }
 }
 </style>
 </head>
@@ -152,10 +167,15 @@ function row(sh) {
     catch (e) { say("Delete failed: " + e.message, true); del.disabled = false; }
   };
 
+  copy.classList.add("a-copy");
+  ttl.classList.add("a-ttl");
+  renew.classList.add("a-renew");
+  del.classList.add("a-del");
   const actions = [copy];
   if (/\.(md|markdown)$/i.test(sh.name || "")) {
-    actions.push(el("a", { className: "button", href: `/shares/${encodeURIComponent(sh.id)}/markdown`, download: sh.name, textContent: "Download .md" }));
+    actions.push(el("a", { className: "button a-dl", href: `/shares/${encodeURIComponent(sh.id)}/markdown`, download: sh.name, textContent: "Download .md" }));
   }
+  if (actions.length === 1) copy.classList.add("solo");
   actions.push(ttl, renew, del);
 
   return el("tr", {},
