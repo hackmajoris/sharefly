@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/hackmajoris/sharefly/pkg/share"
@@ -64,8 +66,9 @@ func openGate(w http.ResponseWriter, r *http.Request, store *share.Store, sh sha
 	http.Redirect(w, r, r.URL.EscapedPath(), http.StatusSeeOther)
 }
 
-// framePage shows the share in an iframe between a header with its expiry and the sharefly footer. The shared
-// files themselves are served unchanged at /<id>/<entry>.
+// framePage shows a page share (a site, an HTML file or rendered Markdown) in an iframe, and any other file as
+// a download button, between a header with its expiry and the sharefly footer. The shared files themselves are
+// served unchanged at /<id>/<entry>.
 func framePage(w http.ResponseWriter, sh share.Share, now time.Time) {
 	title := sh.Name
 	if title == "" {
@@ -74,10 +77,34 @@ func framePage(w http.ResponseWriter, sh share.Share, now time.Time) {
 	writePage(w, http.StatusOK, frameTmpl, map[string]any{
 		"Title":  title,
 		"Src":    (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath(),
+		"Page":   isPage(sh.Entry),
+		"File":   path.Base(sh.Entry),
+		"Size":   humanSize(sh.Size),
 		"Expiry": expiryText(sh.ExpiresAt, now),
 		"Once":   sh.Once,
 		"Repo":   repoURL,
 	})
+}
+
+// isPage reports whether entry is shown rendered: a folder's index.html ("") or an HTML file, which is also
+// what Markdown shares are stored as.
+func isPage(entry string) bool {
+	ext := strings.ToLower(path.Ext(entry))
+	return entry == "" || ext == ".html" || ext == ".htm"
+}
+
+func humanSize(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	v, unit := float64(n)/1024, "KB"
+	for _, u := range []string{"MB", "GB"} {
+		if v < 1024 {
+			break
+		}
+		v, unit = v/1024, u
+	}
+	return fmt.Sprintf("%.1f %s", v, unit)
 }
 
 func expiryText(exp *time.Time, now time.Time) string {
@@ -172,6 +199,13 @@ header { display: flex; flex-wrap: wrap; align-items: center; justify-content: s
 .exp { color: var(--muted); font-variant-numeric: tabular-nums; }
 .once { color: var(--accent); font-weight: 600; margin-right: 6px; }
 iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.dl { flex: 1; display: grid; place-items: center; padding: 24px 16px; }
+.file { width: 100%; max-width: 360px; padding: 28px; border-radius: 14px; border: 1px solid var(--line); text-align: center; }
+.file .fname { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.file .size { margin: 4px 0 20px; color: var(--muted); }
+.button { display: block; padding: 11px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 15px;
+  font-weight: 600; text-decoration: none; }
+.button:hover { filter: brightness(1.08); }
 footer { padding: 6px 16px; border-top: 1px solid var(--line); text-align: center; color: var(--muted); font-size: 12px; }
 a { color: var(--accent); }
 </style>
@@ -181,7 +215,13 @@ a { color: var(--accent); }
   <span class="name">{{.Title}}</span>
   <span class="exp">{{if .Once}}<span class="once">One-time view</span>{{end}}{{.Expiry}}</span>
 </header>
-<iframe src="{{.Src}}" title="{{.Title}}" allowfullscreen></iframe>
+{{if .Page}}<iframe src="{{.Src}}" title="{{.Title}}" allowfullscreen></iframe>
+{{else}}<div class="dl"><div class="file">
+  <div class="fname">{{.File}}</div>
+  <div class="size">{{.Size}}</div>
+  <a class="button" href="{{.Src}}" download="{{.File}}">Download</a>
+</div></div>
+{{end}}
 <footer>Shared with <a href="{{.Repo}}" target="_blank" rel="noopener">sharefly</a></footer>
 </body>
 </html>
