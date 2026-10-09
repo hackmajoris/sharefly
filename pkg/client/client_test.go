@@ -41,11 +41,11 @@ func TestClientRoundTrip(t *testing.T) {
 	c, dataDir := newTestServer(t)
 	site := writeTree(t, map[string]string{"index.html": "hi", "app.js": "x"})
 
-	up, _, err := c.Upload(site, "1h", false)
+	up, _, err := c.Upload(site, "1h", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if up.Name != filepath.Base(site) || up.URL != "https://share.example.com/"+up.ID+"/" {
+	if up.Name != filepath.Base(site) || up.URL != "https://share.example.com/"+up.ID {
 		t.Fatalf("unexpected upload result %+v", up)
 	}
 	if got, err := os.ReadFile(filepath.Join(dataDir, "shares", up.ID, "app.js")); err != nil || string(got) != "x" {
@@ -83,7 +83,7 @@ func TestClientUploadReportsSkipped(t *testing.T) {
 	if err := os.Symlink("/etc/passwd", filepath.Join(site, "leak")); err != nil {
 		t.Fatal(err)
 	}
-	_, skipped, err := c.Upload(site, "1h", false)
+	_, skipped, err := c.Upload(site, "1h", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,18 +92,19 @@ func TestClientUploadReportsSkipped(t *testing.T) {
 	}
 }
 
-func TestClientUploadSingleFileURLPointsAtFile(t *testing.T) {
+// The frame page shows the share's entry, so a single file must be its own entry.
+func TestClientUploadSingleFileIsEntry(t *testing.T) {
 	c, _ := newTestServer(t)
 	f := filepath.Join(t.TempDir(), "report.html")
 	if err := os.WriteFile(f, []byte("r"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	up, _, err := c.Upload(f, "7d", false)
+	up, _, err := c.Upload(f, "7d", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(up.URL, "/"+up.ID+"/report.html") {
-		t.Fatalf("url must open the file directly, got %q", up.URL)
+	if up.Entry != "report.html" {
+		t.Fatalf("entry must be the file, got %q", up.Entry)
 	}
 	if up.ExpiresAt == nil || up.ExpiresAt.Sub(up.CreatedAt) != 7*24*time.Hour {
 		t.Fatalf("ttl not forwarded: %+v", up)
@@ -156,7 +157,7 @@ func connCounter(t *testing.T) (*Client, func() int) {
 func TestClientUploadNoIndexFailsBeforeNetwork(t *testing.T) {
 	c, count := connCounter(t)
 	site := writeTree(t, map[string]string{"a.html": "a", "b.html": "b"})
-	_, _, err := c.Upload(site, "7d", false)
+	_, _, err := c.Upload(site, "7d", false, false)
 	if err == nil || !strings.Contains(err.Error(), "index.html") {
 		t.Fatalf("err = %v, want local index.html error rather than a server error", err)
 	}
@@ -172,7 +173,7 @@ func TestClientUploadBadTTLFailsBeforeNetwork(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Upload(f, "7w", false); err == nil || !strings.Contains(err.Error(), "invalid ttl") {
+	if _, _, err := c.Upload(f, "7w", false, false); err == nil || !strings.Contains(err.Error(), "invalid ttl") {
 		t.Fatalf("err = %v, want invalid ttl error", err)
 	}
 	if n := count(); n != 0 {
@@ -185,7 +186,7 @@ func TestClientUploadDotUsesFolderName(t *testing.T) {
 	c, _ := newTestServer(t)
 	site := writeTree(t, map[string]string{"index.html": "hi"})
 	t.Chdir(site)
-	up, _, err := c.Upload(".", "1h", false)
+	up, _, err := c.Upload(".", "1h", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +204,7 @@ func TestClientUploadTooLargeSurfacesServerError(t *testing.T) {
 	if err := os.WriteFile(f, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Upload(f, "7d", false); err == nil || !strings.Contains(err.Error(), "too large") {
+	if _, _, err := c.Upload(f, "7d", false, false); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("err = %v, want server's upload too large message", err)
 	}
 }
@@ -219,7 +220,7 @@ func TestClientUploadArchiveErrorWins(t *testing.T) {
 	if err := os.Chmod(filepath.Join(site, "locked.js"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Upload(site, "7d", false); err == nil || !errors.Is(err, fs.ErrPermission) {
+	if _, _, err := c.Upload(site, "7d", false, false); err == nil || !errors.Is(err, fs.ErrPermission) {
 		t.Fatalf("err = %v, want local permission error", err)
 	}
 }
@@ -237,7 +238,7 @@ func TestClientUnreachable(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, _, upErr := c.Upload(f, "7d", false)
+	_, _, upErr := c.Upload(f, "7d", false, false)
 	_, listErr := c.List()
 	_, renewErr := c.Renew("x", "7d")
 	for _, err := range []error{upErr, listErr, renewErr, c.Delete("x")} {
@@ -278,7 +279,7 @@ func TestClientNonJSONResponses(t *testing.T) {
 
 func TestClientUploadMissingPath(t *testing.T) {
 	c, count := connCounter(t)
-	if _, _, err := c.Upload(filepath.Join(t.TempDir(), "nope"), "7d", false); err == nil {
+	if _, _, err := c.Upload(filepath.Join(t.TempDir(), "nope"), "7d", false, false); err == nil {
 		t.Fatal("want error for nonexistent path")
 	}
 	if n := count(); n != 0 {
@@ -290,19 +291,37 @@ func TestClientUploadMissingPath(t *testing.T) {
 func TestClientUploadWithPassword(t *testing.T) {
 	c, _ := newTestServer(t)
 	site := writeTree(t, map[string]string{"index.html": "hi"})
-	up, _, err := c.Upload(site, "1h", true)
+	up, _, err := c.Upload(site, "1h", true, false)
 	if err != nil || up.Password == "" || !up.Protected {
 		t.Fatalf("upload = %+v, %v; want a password and protected", up, err)
 	}
-	plain, _, err := c.Upload(site, "1h", false)
+	plain, _, err := c.Upload(site, "1h", false, false)
 	if err != nil || plain.Password != "" || plain.Protected {
 		t.Fatalf("upload without password = %+v, %v", plain, err)
 	}
 }
 
-// An older server ignores password=1 and publishes the share openly; serve --password must not hand out that
-// link as if it were protected, and must not leave it public.
-func TestClientUploadWithPasswordFailsOnServerWithoutSupport(t *testing.T) {
+// serve --once relies on the server recording the share as one-time.
+func TestClientUploadOnce(t *testing.T) {
+	c, _ := newTestServer(t)
+	site := writeTree(t, map[string]string{"index.html": "hi"})
+	if up, _, err := c.Upload(site, "1h", false, true); err != nil || !up.Once {
+		t.Fatalf("upload = %+v, %v; want once", up, err)
+	}
+}
+
+// An older server ignores password=1 and once=1 and publishes the share openly; serve --password/--once must
+// not hand out that link as if it were protected or one-time, and must not leave it public.
+func TestClientUploadFailsOnServerWithoutSupport(t *testing.T) {
+	for _, tc := range []struct {
+		flag           string
+		password, once bool
+	}{{"--password", true, false}, {"--once", false, true}} {
+		t.Run(tc.flag, func(t *testing.T) { uploadToOldServer(t, tc.flag, tc.password, tc.once) })
+	}
+}
+
+func uploadToOldServer(t *testing.T, flag string, password, once bool) {
 	var deleted string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -318,12 +337,12 @@ func TestClientUploadWithPasswordFailsOnServerWithoutSupport(t *testing.T) {
 	t.Cleanup(ts.Close)
 	c := &Client{BaseURL: ts.URL}
 	site := writeTree(t, map[string]string{"index.html": "hi"})
-	up, _, err := c.Upload(site, "1h", true)
-	if err == nil || !strings.Contains(err.Error(), "doesn't support --password") || up.URL != "" {
+	up, _, err := c.Upload(site, "1h", password, once)
+	if err == nil || !strings.Contains(err.Error(), "doesn't support "+flag) || up.URL != "" {
 		t.Fatalf("upload = %+v, %v; want an error and no link", up, err)
 	}
 	if deleted != "old1234567" {
-		t.Fatalf("deleted %q; the unprotected share must be removed", deleted)
+		t.Fatalf("deleted %q; the share must be removed", deleted)
 	}
 }
 
@@ -335,11 +354,11 @@ func TestClientUploadRendersMarkdown(t *testing.T) {
 	if err := os.WriteFile(f, []byte("# Release notes\n\n- **fast**\n- <script>x</script>\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	up, _, err := c.Upload(f, "1h", false)
+	up, _, err := c.Upload(f, "1h", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if up.Name != "notes.md" || !strings.HasSuffix(up.URL, "/"+up.ID+"/notes.html") {
+	if up.Name != "notes.md" || up.Entry != "notes.html" {
 		t.Fatalf("upload = %+v; want the link to the rendered notes.html", up)
 	}
 	page, err := os.ReadFile(filepath.Join(dataDir, "shares", up.ID, "notes.html"))

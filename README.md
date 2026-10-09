@@ -36,7 +36,7 @@ The first `serve` starts a background server for you. The command prints only th
 ### Share a Markdown file
 
 ```
-sharefly serve notes.md       # → http://127.0.0.1:7788/<id>/notes.html
+sharefly serve notes.md       # → http://127.0.0.1:7788/<id>
 ```
 
 A single `.md` or `.markdown` file is shared as a formatted page: headings, lists and task lists, tables, code blocks, quotes, links and emphasis, in light or dark to match the reader's system. The page title is the first `# heading`, and a Download button at the top gives readers the original `.md` file (embedded in the page, so the share stays a single file). Raw HTML in the file shows as text, and links other than `http`, `https`, `mailto` and relative ones are dropped. Markdown files inside a shared folder are served as they are.
@@ -56,7 +56,15 @@ sharefly serve report.html --ttl 1h      # minutes: 30m, hours: 1h, days: 3d
 sharefly serve report.html --ttl never   # until you delete it
 ```
 
-The default is 7 days. Expired links disappear within 5 minutes.
+The default is 7 days. Expired links stop working at once; their files are deleted within 5 minutes.
+
+### Let a link be opened only once
+
+```
+sharefly serve secret.html --once
+```
+
+The link waits until someone opens it (up to its `--ttl`). Visitors first see an Open button, so chat apps that fetch links for previews don't use up the view. The visitor who presses it gets the page, and only that browser can load it, for one minute; after that, or for anyone else, the link is gone. Combine with `--password` to also ask for a password first.
 
 ### See, extend and delete links
 
@@ -71,7 +79,7 @@ sharefly rm k7f3x9qa2m             # gone immediately
 ```
 sharefly serve report.html --password
 password: k7f3-x9qa-2mzt-c4wq (shown only now)
-https://share.yourdomain.com/k7f3x9qa2m/report.html
+https://share.yourdomain.com/k7f3x9qa2m
 ```
 
 The server generates the password and prints it once, on stderr, so `| pbcopy` still copies only the link. Visitors get a password page; after the right password, a cookie for that share keeps them in until the browser closes. Scripts can send it as HTTP Basic auth instead: `curl -u x:<password> <url>`. sharefly stores only a hash, so a lost password can't be shown again: `rm` the share and serve it again.
@@ -82,7 +90,7 @@ The server generates the password and prints it once, on stderr, so `| pbcopy` s
 sharefly dashboard            # opens it in your browser and prints the URL
 ```
 
-It opens the page of the server your commands talk to (`server` setting or `--server`): `http://127.0.0.1:7787/` locally, or `http://<host-tailscale-name>:7787/` on a device pointed at another host. Like `serve`, it starts a local server first if none is running. The page lists every share with its link, expiry, size and whether it has a password, and lets you copy a link, renew a share or delete it. Markdown shares also have a Download .md button.
+It opens the page of the server your commands talk to (`server` setting or `--server`): `http://127.0.0.1:7787/` locally, or `http://<host-tailscale-name>:7787/` on a device pointed at another host. Like `serve`, it starts a local server first if none is running. The page lists every share with its link, expiry, size and whether it has a password or is one-time, and lets you copy a link, renew a share or delete it. Markdown shares also have a Download .md button.
 
 The page is served only on `api-addr`, never on the public file server, so it is as private as the API: this machine, or your tailnet. It has no login of its own; anyone who can reach `api-addr` can use it, just like the CLI.
 
@@ -100,7 +108,7 @@ No domain or Cloudflare account needed. sharefly runs `cloudflared` for you and 
 ```
 brew install cloudflared
 sharefly config set tunnel quick
-sharefly serve report.html     # → https://<random-words>.trycloudflare.com/<id>/report.html
+sharefly serve report.html     # → https://<random-words>.trycloudflare.com/<id>
 ```
 
 For one run without changing the config: `sharefly serve report.html --tunnel quick`. The flag only applies when `serve` starts the server; if one is already running in another mode, `serve` refuses and tells you to `sharefly stop` first. The server keeps the tunnel until `sharefly stop`, so a later plain `serve` still gets a public link.
@@ -118,7 +126,7 @@ You need a domain on Cloudflare.
    sharefly config set tunnel-token eyJ...
    sharefly config set public-url share.yourdomain.com
    sharefly config set tunnel token
-   sharefly serve report.html     # → https://share.yourdomain.com/<id>/report.html
+   sharefly serve report.html     # → https://share.yourdomain.com/<id>
    ```
 
 Token mode needs both the token and `public-url` (or `--public-url`); without either, the server refuses to start and `serve` says why before starting anything.
@@ -183,7 +191,7 @@ You rarely need `start`: `serve` starts the server when none is running. Use `sh
 ### Commands
 
 ```
-sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M] [--password]   # upload, print only the URL
+sharefly serve <file|folder> [--ttl 7d] [--server URL] [--tunnel M] [--password] [--once]   # upload, print only the URL
 sharefly ls [--server URL]                                                         # table: ID NAME EXPIRES URL
 sharefly dashboard [--server URL]                                                  # open the management page in your browser
 sharefly rm <id> [--server URL]                                                    # delete a share, prints nothing
@@ -200,10 +208,11 @@ sharefly config open                                                            
 ```
 
 - `--password` (serve): protect the share with a generated password, printed once on stderr.
+- `--once` (serve): one visitor can open the share; it expires a minute after they do.
 - `--tunnel` (serve): tunnel for the server `serve` starts (`off`, `quick`, `token`). Error if a server already runs in another mode, or if `--server` is another machine.
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
-- A folder's URL points at the folder (`/<id>/`). A single file's URL points at the file (`/<id>/report.html`), except a lone `index.html`, which gets `/<id>/`.
+- A share's URL is `/<id>`: a page with the share's name and expiry on top, the share itself in a frame (served unchanged at `/<id>/<entry>`), and a "Shared with sharefly" footer. Links inside the share to sites that refuse to be framed open only with cmd/ctrl-click. Links printed by older versions (`/<id>/report.html`) still work, without the frame.
 - Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly server --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits until it answers. If the server exits during startup, `serve` (and `start`) fail at once with the last lines of its log. `ls`, `rm` and `renew` never auto-start.
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.
@@ -240,20 +249,20 @@ Browser requests from another site (an `Origin` that isn't the API's own address
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| `POST` | `/shares?ttl=7d&name=report.html[&password=1]` (tar.gz body; missing `ttl` = `7d`) | 201 record + `url` (+ `password` once) | 400 bad ttl, archive or `password` value, 413 body or uncompressed size over 100MB, 500 |
+| `POST` | `/shares?ttl=7d&name=report.html[&password=1][&once=1]` (tar.gz body; missing `ttl` = `7d`) | 201 record + `url` (+ `password` once) | 400 bad ttl, archive, `password` or `once` value, 413 body or uncompressed size over 100MB, 500 |
 | `GET` | `/shares` | 200 array of record + `url` | |
 | `DELETE` | `/shares/{id}` | 204 | 404, 500 |
 | `GET` | `/shares/{id}/markdown` | 200 the original Markdown as an attachment | 404 (unknown share, not a Markdown share, or shared by a version without embedded Markdown) |
 | `POST` | `/shares/{id}/renew` body `{"ttl":"7d"}` | 200 record + `url` | 400, 404 (also for an already-expired share), 500 |
 
-Record: `{"id","name","entry","size","created_at","expires_at","url","protected"}`; the upload response of a protected share also has `"password"`, and no response ever has it again. `entry` is the path opened by `url`, relative to the share (`""` = its `index.html`); `size` is uncompressed bytes; `expires_at: null` means never. Errors are `{"error":"..."}`.
+Record: `{"id","name","entry","size","created_at","expires_at","url","protected"}`, plus `"once":true` for a one-time share (whose `expires_at` drops to a minute away when it is opened); the upload response of a protected share also has `"password"`, and no response ever has it again. `entry` is the path the `url` page shows, relative to the share (`""` = its `index.html`); `size` is uncompressed bytes; `expires_at: null` means never. Errors are `{"error":"..."}`.
 
 The archive may hold only regular files and directories with relative paths, at most 10000 entries, and no entry may conflict with an earlier one (a file `a` followed by `a/b`).
 
 ## Good to know
 
-- **Access:** each share gets a random 10-character ID. The unguessable link is the only access control, unless the share was served with `--password` (80-bit generated password, asked on a password page and kept in a cookie scoped to that share). When the server listens on its tailnet address, anyone on your tailnet can create and delete shares.
-- **Expiry:** expired shares are swept at startup and every 5 minutes. `rm` takes effect immediately; responses carry `Cache-Control: private, no-store`, so Cloudflare never serves stale copies.
+- **Access:** each share gets a random 10-character ID. The unguessable link is the only access control, unless the share was served with `--password` (80-bit generated password, asked on a password page and kept in a cookie scoped to that share) or `--once` (only the opener's browser gets a cookie for it). When the server listens on its tailnet address, anyone on your tailnet can create and delete shares.
+- **Expiry:** an expired share is 404 at once; its files are swept at startup and every 5 minutes. `rm` takes effect immediately; responses carry `Cache-Control: private, no-store`, so Cloudflare never serves stale copies.
 - **Limits:** 100MB per upload (compressed and uncompressed), 10000 files.
 - **What gets uploaded:** empty folders aren't. `.git` and `.DS_Store` are skipped. Inside a folder, symlinks and other non-regular files are skipped with a warning, and a symlinked root `index.html` is rejected. The path you pass to `serve` may itself be a symlink; it is followed.
 - **Data folder:** at startup the server deletes anything under `<data-dir>/shares/` that has no record and empties `<data-dir>/tmp/`. Don't put files there by hand.

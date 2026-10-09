@@ -21,6 +21,9 @@ type Share struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 	// PasswordHash, when set, makes the public file server require the share's password.
 	PasswordHash string `json:"password_hash,omitempty"`
+	// Once shares can be opened by one visitor; OpenToken is set when that happens and is the visitor's cookie.
+	Once      bool   `json:"once,omitempty"`
+	OpenToken string `json:"open_token,omitempty"`
 }
 
 // Link is a share as the API returns it: never the password hash, the password only once, from the upload.
@@ -95,6 +98,30 @@ func (s *Store) Renew(id string, d time.Duration, never bool, now time.Time) (Sh
 	next[i].ExpiresAt = nil
 	if !never {
 		exp := now.Add(d)
+		next[i].ExpiresAt = &exp
+	}
+	if err := s.commit(next); err != nil {
+		return Share{}, err
+	}
+	return next[i], nil
+}
+
+// OpenGrace is how long the visitor who opens a once share has to load it.
+const OpenGrace = time.Minute
+
+// Open marks a once share as opened with token and cuts its expiry to now+OpenGrace. It fails with ErrNotFound
+// unless the share is a once share, not yet opened and not expired, so only one caller can ever open it.
+func (s *Store) Open(id, token string, now time.Time) (Share, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := s.index(id)
+	if i < 0 || !s.shares[i].Once || s.shares[i].OpenToken != "" ||
+		(s.shares[i].ExpiresAt != nil && !s.shares[i].ExpiresAt.After(now)) {
+		return Share{}, ErrNotFound
+	}
+	next := slices.Clone(s.shares)
+	next[i].OpenToken = token
+	if exp := now.Add(OpenGrace); next[i].ExpiresAt == nil || exp.Before(*next[i].ExpiresAt) {
 		next[i].ExpiresAt = &exp
 	}
 	if err := s.commit(next); err != nil {

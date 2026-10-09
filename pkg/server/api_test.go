@@ -107,7 +107,7 @@ func TestAPIRoundTrip(t *testing.T) {
 	if up.Name != "site" || up.Entry != "" || up.Size != int64(len("hello")+len("body{}")) {
 		t.Fatalf("unexpected record %+v", up)
 	}
-	if up.URL != "https://share.example.com/"+up.ID+"/" {
+	if up.URL != "https://share.example.com/"+up.ID {
 		t.Fatalf("url = %q", up.URL)
 	}
 	if up.ExpiresAt == nil || up.ExpiresAt.Sub(up.CreatedAt) != time.Hour {
@@ -152,7 +152,7 @@ func TestAPIUploadSingleFileEntryAndDefaultTTL(t *testing.T) {
 		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
 	}
 	up := decode[share.Link](t, rec)
-	if up.Entry != "report.html" || up.URL != "https://share.example.com/"+up.ID+"/report.html" {
+	if up.Entry != "report.html" || up.URL != "https://share.example.com/"+up.ID {
 		t.Fatalf("unexpected record %+v", up)
 	}
 	if up.ExpiresAt == nil || up.ExpiresAt.Sub(up.CreatedAt) != 7*24*time.Hour {
@@ -240,12 +240,13 @@ func TestAPIRenewBadTTL(t *testing.T) {
 	}
 }
 
-// The public link is built from the stored entry, so names with spaces must be escaped to work.
-func TestAPIURLEscapesEntryAndTrimsPublicURL(t *testing.T) {
+// The public link is the share's frame page, which carries the expiry header and, for once shares, the Open
+// button; linking to the entry file would skip both.
+func TestAPIURLIsFramePage(t *testing.T) {
 	a := newTestAPI(t, 1024)
-	a.PublicURL = "https://share.example.com"
+	a.PublicURL = "https://share.example.com/"
 	up := decode[share.Link](t, do(t, a, http.MethodPost, "/shares", tarGz(t, regular("my report.html", "r"))))
-	if want := "https://share.example.com/" + up.ID + "/my%20report.html"; up.URL != want {
+	if want := "https://share.example.com/" + up.ID; up.URL != want {
 		t.Fatalf("url = %q, want %q", up.URL, want)
 	}
 }
@@ -341,11 +342,11 @@ func TestAPIUsesPublicURLFunc(t *testing.T) {
 	api := newTestAPI(t, 1<<20)
 	base := "https://one.example.com"
 	api.PublicURLFunc = func() string { return base }
-	if got := api.response(share.Share{ID: "abc", Entry: "x.html"}).URL; got != "https://one.example.com/abc/x.html" {
+	if got := api.response(share.Share{ID: "abc", Entry: "x.html"}).URL; got != "https://one.example.com/abc" {
 		t.Errorf("url = %q", got)
 	}
 	base = "https://two.example.com/"
-	if got := api.response(share.Share{ID: "abc"}).URL; got != "https://two.example.com/abc/" {
+	if got := api.response(share.Share{ID: "abc"}).URL; got != "https://two.example.com/abc" {
 		t.Errorf("url after change = %q", got)
 	}
 }
@@ -389,6 +390,26 @@ func TestAPIPasswordShownOnceNeverHash(t *testing.T) {
 	}
 	if rec := do(t, a, http.MethodPost, "/shares?password=hunter2", tarGz(t, regular("index.html", "x"))); rec.Code != http.StatusBadRequest {
 		t.Fatalf("chosen password: %d, want 400 (passwords are generated only)", rec.Code)
+	}
+}
+
+// The open token is the opener's cookie for a once share; anyone who could read it from the API could load the
+// share during the grace minute without having opened it.
+func TestAPIOnceShareNeverShowsToken(t *testing.T) {
+	a := newTestAPI(t, 1<<20)
+	up := decode[share.Link](t, do(t, a, http.MethodPost, "/shares?once=1", tarGz(t, regular("index.html", "x"))))
+	if !up.Once {
+		t.Fatalf("upload response = %+v; want once", up)
+	}
+	opened, err := a.Store.Open(up.ID, "secrettoken", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := do(t, a, http.MethodGet, "/shares", nil).Body.String(); strings.Contains(body, opened.OpenToken) || !strings.Contains(body, `"once":true`) {
+		t.Fatalf("list leaks the open token or drops once: %s", body)
+	}
+	if rec := do(t, a, http.MethodPost, "/shares?once=yes", tarGz(t, regular("index.html", "x"))); rec.Code != http.StatusBadRequest {
+		t.Fatalf("once=yes: %d, want 400", rec.Code)
 	}
 }
 

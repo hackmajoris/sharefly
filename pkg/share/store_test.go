@@ -241,3 +241,76 @@ func TestStoreConcurrentMutations(t *testing.T) {
 		t.Fatalf("persisted %d shares, want 10", n)
 	}
 }
+
+// A once share must open for exactly one caller, even when two visitors click at the same time; the second
+// would otherwise get its own cookie and a second view.
+func TestStoreOpenOnlyOnce(t *testing.T) {
+	s, _ := newStore(t)
+	if err := s.Add(Share{ID: "once", Once: true}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+	var wg sync.WaitGroup
+	opened := make(chan string, 10)
+	for i := range 10 {
+		wg.Go(func() {
+			if _, err := s.Open("once", fmt.Sprint("token", i), now); err == nil {
+				opened <- fmt.Sprint("token", i)
+			}
+		})
+	}
+	wg.Wait()
+	close(opened)
+	var winners []string
+	for tok := range opened {
+		winners = append(winners, tok)
+	}
+	if len(winners) != 1 {
+		t.Fatalf("%d callers opened the share, want 1", len(winners))
+	}
+	if sh, _ := s.Get("once"); sh.OpenToken != winners[0] {
+		t.Fatalf("stored token %q, want the winner's %q", sh.OpenToken, winners[0])
+	}
+}
+
+// Opening starts the visitor's grace minute, but must never extend a share that expires sooner.
+func TestStoreOpenCutsExpiry(t *testing.T) {
+	s, _ := newStore(t)
+	now := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+	soon := now.Add(10 * time.Second)
+	for _, sh := range []Share{
+		{ID: "never", Once: true},
+		{ID: "week", Once: true, ExpiresAt: ptr(now.Add(7 * 24 * time.Hour))},
+		{ID: "soon", Once: true, ExpiresAt: &soon},
+	} {
+		if err := s.Add(sh); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for id, want := range map[string]time.Time{"never": now.Add(OpenGrace), "week": now.Add(OpenGrace), "soon": soon} {
+		sh, err := s.Open(id, "tok", now)
+		if err != nil {
+			t.Fatalf("Open %s: %v", id, err)
+		}
+		if sh.ExpiresAt == nil || !sh.ExpiresAt.Equal(want) {
+			t.Errorf("%s: expires %v, want %v", id, sh.ExpiresAt, want)
+		}
+	}
+}
+
+// Only unexpired once shares can be opened; anything else would hand out a cookie for a share that is gone
+// or was never one-time.
+func TestStoreOpenRejects(t *testing.T) {
+	s, _ := newStore(t)
+	now := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+	for _, sh := range []Share{{ID: "plain"}, {ID: "expired", Once: true, ExpiresAt: &now}} {
+		if err := s.Add(sh); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"plain", "expired", "missing"} {
+		if _, err := s.Open(id, "tok", now); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Open %s: err = %v, want ErrNotFound", id, err)
+		}
+	}
+}

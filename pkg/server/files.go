@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/hackmajoris/sharefly/pkg/share"
 )
@@ -49,31 +50,63 @@ const cacheControl = "private, no-store"
 
 type noStoreWriter struct {
 	http.ResponseWriter
+	notFound bool
 }
 
-func (w noStoreWriter) WriteHeader(code int) {
+// WriteHeader replaces every 404 body, http.FileServer's plain text included, with sharefly's page.
+func (w *noStoreWriter) WriteHeader(code int) {
 	w.Header().Set("Cache-Control", cacheControl)
+	if code == http.StatusNotFound {
+		w.notFound = true
+		w.Header().Del("Content-Length")
+		writePage(w.ResponseWriter, code, notFoundPage, repoURL)
+		return
+	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
-func (w noStoreWriter) Write(b []byte) (int, error) {
+func (w *noStoreWriter) Write(b []byte) (int, error) {
+	if w.notFound {
+		return len(b), nil
+	}
 	w.Header().Set("Cache-Control", cacheControl)
 	return w.ResponseWriter.Write(b)
 }
 
-// FilesHandler serves the shares under sharesDir. A share whose record in store has a password hash shows a
-// password form until the visitor has its cookie (or sends HTTP Basic auth); store may be nil when no share
-// can have one.
+// FilesHandler serves the shares under sharesDir, and at /<id> the share's frame page. With store set, an
+// expired share is 404 before the sweep removes it, a share with a password hash shows a password form until
+// the visitor has its cookie (or sends HTTP Basic auth), and a once share is reachable only with the cookie of
+// the visitor who opened it. store may be nil when no share can have a record (tests).
 func FilesHandler(sharesDir string, store *share.Store) http.Handler {
 	files := http.FileServer(noListingFS{http.Dir(sharesDir)})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w = noStoreWriter{w}
+		w = &noStoreWriter{ResponseWriter: w}
 		if store != nil {
 			// the same cleaning http.FileServer applies, so the ID checked is the directory it will serve
 			id, _, _ := strings.Cut(strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/"), "/")
-			if sh, err := store.Get(id); err == nil && sh.PasswordHash != "" && !authorized(r, sh) {
-				passwordForm(w, r, sh)
-				return
+			if sh, err := store.Get(id); err == nil {
+				now := time.Now()
+				if sh.ExpiresAt != nil && !sh.ExpiresAt.After(now) {
+					http.NotFound(w, r)
+					return
+				}
+				if sh.PasswordHash != "" && !authorized(r, sh) {
+					passwordForm(w, r, sh)
+					return
+				}
+				frame := r.URL.Path == "/"+id
+				if sh.Once && !isOpener(r, sh) {
+					if frame && sh.OpenToken == "" {
+						openGate(w, r, store, sh)
+						return
+					}
+					http.NotFound(w, r)
+					return
+				}
+				if frame {
+					framePage(w, sh, now)
+					return
+				}
 			}
 		}
 		files.ServeHTTP(w, r)
@@ -105,9 +138,9 @@ func passwordForm(w http.ResponseWriter, r *http.Request, sh share.Share) {
 			http.SetCookie(w, &http.Cookie{
 				Name:     cookieName(sh.ID),
 				Value:    sh.PasswordHash,
-				Path:     "/" + sh.ID + "/",
+				Path:     "/" + sh.ID,
 				HttpOnly: true,
-				Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+				Secure:   isHTTPS(r),
 				SameSite: http.SameSiteLaxMode,
 			})
 			http.Redirect(w, r, r.URL.EscapedPath(), http.StatusSeeOther)
@@ -130,27 +163,7 @@ var formPage = template.Must(template.New("form").Parse(`<!doctype html>
 <meta name="robots" content="noindex">
 <title>Password required</title>
 <style>
-:root { --bg: #f6f7f9; --card: #fff; --fg: #1d2129; --muted: #6b7280; --line: #dfe3e8; --accent: #3b6fd8; --bad: #c2412d; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #111317; --card: #1a1d23; --fg: #e8eaed; --muted: #9aa1ab; --line: #2c3139; --accent: #7aa2f7; --bad: #f2836b; }
-}
-* { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
-  background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-form { width: 100%; max-width: 360px; padding: 32px 28px 28px; border-radius: 14px; background: var(--card);
-  border: 1px solid var(--line); box-shadow: 0 12px 40px -18px rgba(0,0,0,.35); }
-.lock { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 18px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 20px; }
-h1 { margin: 0 0 6px; font-size: 19px; font-weight: 650; }
-p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
-input { width: 100%; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg);
-  color: var(--fg); font: 15px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .04em; }
-input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-color: var(--accent); }
-button { width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 9px; background: var(--accent);
-  color: #fff; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
-button:hover { filter: brightness(1.08); }
-.err { margin: 10px 0 0; color: var(--bad); font-size: 13.5px; }
-</style>
+` + cardCSS + `</style>
 </head>
 <body>
 <form method="post">
@@ -164,3 +177,26 @@ button:hover { filter: brightness(1.08); }
 </body>
 </html>
 `))
+
+// cardCSS styles the password, Open and not-found pages: one centered card.
+const cardCSS = `:root { --bg: #f6f7f9; --card: #fff; --fg: #1d2129; --muted: #6b7280; --line: #dfe3e8; --accent: #3b6fd8; --bad: #c2412d; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111317; --card: #1a1d23; --fg: #e8eaed; --muted: #9aa1ab; --line: #2c3139; --accent: #7aa2f7; --bad: #f2836b; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+  background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+form, main { width: 100%; max-width: 360px; padding: 32px 28px 28px; border-radius: 14px; background: var(--card);
+  border: 1px solid var(--line); box-shadow: 0 12px 40px -18px rgba(0,0,0,.35); }
+.lock { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 18px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 20px; }
+h1 { margin: 0 0 6px; font-size: 19px; font-weight: 650; }
+p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+input { width: 100%; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--fg); font: 15px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .04em; }
+input:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-color: var(--accent); }
+button { width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 9px; background: var(--accent);
+  color: #fff; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+button:hover { filter: brightness(1.08); }
+.err { margin: 10px 0 0; color: var(--bad); font-size: 13.5px; }
+`

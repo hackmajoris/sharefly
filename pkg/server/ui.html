@@ -137,6 +137,7 @@ function expiry(at) {
 function row(sh) {
   const name = el("div", { className: "name", textContent: sh.name || sh.id });
   if (sh.protected) name.append(el("span", { className: "lock", textContent: "password", title: "Visitors need the share's password" }));
+  if (sh.once) name.append(el("span", { className: "lock", textContent: "once", title: "One visitor can open it; it expires a minute after" }));
   const exp = expiry(sh.expires_at);
 
   const copy = el("button", { type: "button", textContent: "Copy link" });

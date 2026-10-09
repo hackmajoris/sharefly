@@ -26,7 +26,7 @@ func resolveServer(flagVal string) (string, error) {
 	return c.resolve(flagVal, serverKey)
 }
 
-func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string, all, password *bool) (*client.Client, []string, error) {
+func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string, all, password, once *bool) (*client.Client, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	srv := fs.String("server", "", "server API URL (default: config `server`, else http://<api-addr>)")
 	if ttl != nil {
@@ -40,6 +40,9 @@ func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string,
 	}
 	if password != nil {
 		fs.BoolVar(password, "password", false, "protect the share with a generated password, printed once on stderr")
+	}
+	if once != nil {
+		fs.BoolVar(once, "once", false, "let one visitor open the share, then remove it a minute later")
 	}
 	var pos []string
 	for {
@@ -81,15 +84,15 @@ func parseClientArgs(name string, args []string, nargs int, ttl, tunnel *string,
 
 func runServe(args []string) error {
 	var ttl, tunnel string
-	var password bool
-	c, pos, err := parseClientArgs("serve", args, 1, &ttl, &tunnel, nil, &password)
+	var password, once bool
+	c, pos, err := parseClientArgs("serve", args, 1, &ttl, &tunnel, nil, &password, &once)
 	if err != nil {
 		return err
 	}
 	if err := ensureLocalServer(c, tunnel, spawnLocalServer, startWait); err != nil {
 		return err
 	}
-	sh, skipped, err := c.Upload(pos[0], ttl, password)
+	sh, skipped, err := c.Upload(pos[0], ttl, password, once)
 	for _, rel := range skipped {
 		fmt.Fprintf(os.Stderr, "warning: skipping %s (not a regular file)\n", rel)
 	}
@@ -114,7 +117,7 @@ var openBrowser = func(url string) error {
 
 // runDashboard opens the server's management page, starting a local server first when needed, like serve.
 func runDashboard(args []string) error {
-	c, _, err := parseClientArgs("dashboard", args, 0, nil, nil, nil, nil)
+	c, _, err := parseClientArgs("dashboard", args, 0, nil, nil, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -133,7 +136,7 @@ func runDashboard(args []string) error {
 }
 
 func runList(args []string) error {
-	c, _, err := parseClientArgs("ls", args, 0, nil, nil, nil, nil)
+	c, _, err := parseClientArgs("ls", args, 0, nil, nil, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -152,6 +155,9 @@ func printShares(w io.Writer, shares []share.Link) error {
 		if sh.ExpiresAt != nil {
 			exp = sh.ExpiresAt.Local().Format(time.DateTime)
 		}
+		if sh.Once {
+			exp += " (once)"
+		}
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", sh.ID, sh.Name, exp, sh.URL)
 	}
 	return tw.Flush()
@@ -159,7 +165,7 @@ func printShares(w io.Writer, shares []share.Link) error {
 
 func runRm(args []string) error {
 	var all bool
-	c, pos, err := parseClientArgs("rm", args, 1, nil, nil, &all, nil)
+	c, pos, err := parseClientArgs("rm", args, 1, nil, nil, &all, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -181,7 +187,7 @@ func runRm(args []string) error {
 
 func runRenew(args []string) error {
 	var ttl string
-	c, pos, err := parseClientArgs("renew", args, 1, &ttl, nil, nil, nil)
+	c, pos, err := parseClientArgs("renew", args, 1, &ttl, nil, nil, nil, nil)
 	if err != nil {
 		return err
 	}
