@@ -10,7 +10,7 @@ import (
 const usage = `usage: sharefly <command> [flags]
 
 commands:
-  serve     share a file or folder: serve <path> [--ttl 7d] [--server URL] [--tunnel quick] [--password]
+  serve     share a file or folder: serve <path> [--ttl 7d] [--server URL] [--tunnel quick] [--password] [--once]
   ls        list shares
   dashboard open the page that lists, renews and deletes shares in your browser
   rm        delete a share: rm <id> | rm --all

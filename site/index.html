@@ -123,15 +123,15 @@ footer a { color: var(--muted); }
   <h1>Send a web page as a link.</h1>
   <p class="lede">sharefly uploads a static HTML file or folder from your terminal and prints a link. It works on your machine with zero setup, and for anyone on the internet once you add a Cloudflare Tunnel.</p>
 
-  <div class="term" role="img" aria-label="Terminal: sharefly serve report.html starts a local server and prints http://127.0.0.1:7788/k7f3x9qa2m/report.html. After sharefly config set tunnel quick, the same command prints a public trycloudflare.com link.">
+  <div class="term" role="img" aria-label="Terminal: sharefly serve report.html starts a local server and prints http://127.0.0.1:7788/k7f3x9qa2m. After sharefly config set tunnel quick, the same command prints a public trycloudflare.com link.">
     <div class="term-top" aria-hidden="true"><i></i><i></i><i></i></div>
 <pre aria-hidden="true"><span class="p">$ </span><span class="type" style="--n: 26; --d: .3s">sharefly serve report.html</span>
 <span class="show out" style="--d: 1.4s">started local sharefly server (pid 4242, log ~/.local/state/sharefly/server.log)</span>
-<span class="show url" style="--d: 1.8s">http://127.0.0.1:7788/k7f3x9qa2m/report.html</span>
+<span class="show url" style="--d: 1.8s">http://127.0.0.1:7788/k7f3x9qa2m</span>
 
 <span class="show" style="--d: 2.4s"><span class="p">$ </span></span><span class="type" style="--n: 32; --d: 2.5s">sharefly config set tunnel quick</span>
 <span class="show" style="--d: 3.6s"><span class="p">$ </span></span><span class="type" style="--n: 26; --d: 3.7s">sharefly serve report.html</span>
-<span class="show url" style="--d: 4.8s">https://&lt;random-words&gt;.trycloudflare.com/&lt;id&gt;/report.html</span>
+<span class="show url" style="--d: 4.8s">https://&lt;random-words&gt;.trycloudflare.com/&lt;id&gt;</span>
 <span class="fuse" style="--d: 4.8s"></span><span class="show note" style="--d: 4.8s">expires in 7 days unless you pick another --ttl</span></pre>
   </div>
 
@@ -175,9 +175,11 @@ footer a { color: var(--muted); }
 
     <div class="group" aria-labelledby="h-control">
       <h3 class="group-title" id="h-control">Stay in control</h3>
-      <div class="feats">
+      <div class="feats two">
         <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html <span class="nw">--ttl</span> 1h</pre>
-          <h3>Links that expire</h3><p>Pick <code>30m</code>, <code>1h</code>, <code>3d</code> or <code>never</code>; the default is 7 days. <code>renew</code> extends a link, <code>rm</code> ends it at once.</p></article>
+          <h3>Links that expire</h3><p>Pick <code>30m</code>, <code>1h</code>, <code>3d</code> or <code>never</code>; the default is 7 days. <code>renew</code> extends a link, <code>rm</code> ends it at once. Visitors see the expiry above the page.</p></article>
+        <article class="feat"><pre><span class="p">$ </span>sharefly serve secret.html <span class="nw">--once</span></pre>
+          <h3>Links that work once</h3><p>The link waits until someone presses Open, so chat previews don't use it up. That browser gets the page for a minute; after that, and for anyone else, it's gone.</p></article>
         <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html <span class="nw">--password</span>
 <span class="out">password: k7f3-x9qa-2mzt-c4wq</span></pre>
           <h3>Lock a share with a password</h3><p>sharefly generates one and shows it once. Visitors get a password page; it goes to stderr, so pipes still get only the link.</p></article>
@@ -207,7 +209,7 @@ footer a { color: var(--muted); }
 <pre class="block"><span class="p">$ </span>brew install cloudflared
 <span class="p">$ </span>sharefly config set tunnel quick
 <span class="p">$ </span>sharefly serve report.html
-<span class="url">https://&lt;random-words&gt;.trycloudflare.com/&lt;id&gt;/report.html</span></pre>
+<span class="url">https://&lt;random-words&gt;.trycloudflare.com/&lt;id&gt;</span></pre>
     <p class="small">The address changes every time the server starts, so links stop working after <code>sharefly stop</code>.</p>
 
     <h3 class="group-title">Your own domain: needs a domain on Cloudflare</h3>
@@ -221,7 +223,7 @@ footer a { color: var(--muted); }
 <span class="p">$ </span>sharefly config set public-url share.yourdomain.com
 <span class="p">$ </span>sharefly config set tunnel token
 <span class="p">$ </span>sharefly serve report.html
-<span class="url">https://share.yourdomain.com/&lt;id&gt;/report.html</span></pre>
+<span class="url">https://share.yourdomain.com/&lt;id&gt;</span></pre>
     <p class="small">If you installed <code>cloudflared</code> as a system service before, remove it with <code>sudo cloudflared service uninstall</code> so two connectors don't share the tunnel.</p>
   </section>
 

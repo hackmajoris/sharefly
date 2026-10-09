@@ -81,6 +81,11 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "password must be 1 or absent")
 		return
 	}
+	once := r.URL.Query().Get("once")
+	if once != "" && once != "1" {
+		writeError(w, http.StatusBadRequest, "once must be 1 or absent")
+		return
+	}
 	id, err := share.NewID()
 	if err != nil {
 		internalError(w, err)
@@ -118,6 +123,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		Size:         size,
 		CreatedAt:    now,
 		PasswordHash: passwordHash,
+		Once:         once == "1",
 	}
 	if !never {
 		exp := now.Add(d)
@@ -225,10 +231,11 @@ func (a *API) markdownSource(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(src)
 }
 
+// response links to the share's frame page (FilesHandler), never to its files directly.
 func (a *API) response(sh share.Share) share.Link {
-	path := (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath()
-	link := share.Link{Share: sh, URL: strings.TrimSuffix(a.Base(), "/") + path, Protected: sh.PasswordHash != ""}
+	link := share.Link{Share: sh, URL: strings.TrimSuffix(a.Base(), "/") + "/" + url.PathEscape(sh.ID), Protected: sh.PasswordHash != ""}
 	link.PasswordHash = ""
+	link.OpenToken = ""
 	return link
 }
 

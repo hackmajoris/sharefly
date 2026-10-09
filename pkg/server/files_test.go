@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -199,8 +200,9 @@ func postPassword(t *testing.T, h http.Handler, path, password string, hdr map[s
 	return rec
 }
 
-// The form must unlock the whole share (its assets too) for this browser only: the cookie is scoped to the
-// share's path, unreadable by scripts, Secure behind Cloudflare's HTTPS, and useless for another share.
+// The form must unlock the whole share (its frame page and assets too) for this browser only: the cookie is
+// scoped to the share's path, unreadable by scripts, Secure behind Cloudflare's HTTPS, and useless for another
+// share.
 func TestFilesPasswordFormSetsShareCookie(t *testing.T) {
 	h, pw, _ := protectedShare(t)
 
@@ -217,8 +219,20 @@ func TestFilesPasswordFormSetsShareCookie(t *testing.T) {
 		t.Fatalf("cookies = %v", cookies)
 	}
 	c := cookies[0]
-	if c.Path != "/site123456/" || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode || strings.Contains(c.Value, pw) {
+	if c.Path != "/site123456" || !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode || strings.Contains(c.Value, pw) {
 		t.Fatalf("cookie = %+v; want share path, HttpOnly, Secure, Lax, and never the password", c)
+	}
+
+	// browsers match Path=/site123456 on whole segments, so a share whose ID extends this one never gets it
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar.SetCookies(&url.URL{Scheme: "https", Host: "h", Path: "/site123456/"}, cookies)
+	for p, want := range map[string]int{"/site123456": 1, "/site123456/assets/app.js": 1, "/site1234567/": 0, "/site123456x": 0} {
+		if got := len(jar.Cookies(&url.URL{Scheme: "https", Host: "h", Path: p})); got != want {
+			t.Errorf("browser sends %d cookies to %s, want %d", got, p, want)
+		}
 	}
 
 	if rec := getCookie(t, h, "/site123456/assets/app.js", c); rec.Code != http.StatusOK || rec.Body.String() != "js" {

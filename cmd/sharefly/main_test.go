@@ -80,7 +80,7 @@ func TestRunServePrintsOnlyURLAndRmIsSilent(t *testing.T) {
 	if code != 0 || len(shares) != 1 {
 		t.Fatalf("serve: code %d, shares %v", code, shares)
 	}
-	if want := "https://share.example.com/" + shares[0].ID + "/report.html\n"; out != want {
+	if want := "https://share.example.com/" + shares[0].ID + "\n"; out != want {
 		t.Fatalf("stdout = %q, want %q", out, want)
 	}
 
@@ -165,7 +165,7 @@ func TestRunServeWithPasswordKeepsStdoutURLOnly(t *testing.T) {
 	if code != 0 || len(shares) != 1 || shares[0].PasswordHash == "" {
 		t.Fatalf("serve --password: code %d, shares %+v", code, shares)
 	}
-	if want := "https://share.example.com/" + shares[0].ID + "/report.html\n"; out != want {
+	if want := "https://share.example.com/" + shares[0].ID + "\n"; out != want {
 		t.Fatalf("stdout = %q, want only %q", out, want)
 	}
 }
