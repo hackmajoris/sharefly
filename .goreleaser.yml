@@ -36,10 +36,11 @@ homebrew_casks:
     description: Share static HTML from your tailnet via a public URL through a Cloudflare Tunnel
     binaries:
       - sharefly
-    # the release binaries are unsigned, so macOS quarantines what brew downloads
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sharefly"]
-          end
+    # the release binaries are unsigned, so macOS quarantines what brew downloads; postflight_steps, not a
+    # postflight hook, which Homebrew 7 deprecates (goreleaser has no option for it, so a custom block)
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "sharefly"], chdir: "."
+        end
+      end
