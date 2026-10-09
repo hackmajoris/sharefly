@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>sharefly: share a web page as a link</title>
-<meta name="description" content="sharefly uploads a static HTML file or folder from your terminal and prints a link. Local with zero setup, public through a Cloudflare Tunnel, optionally password-protected.">
+<title>sharefly: share a web page or any file as a link</title>
+<meta name="description" content="sharefly uploads a file or folder from your terminal and prints a link: HTML and Markdown open as pages, anything else as a download. Local with zero setup, public through a Cloudflare Tunnel, optionally password-protected.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@112.5,400;112.5,600;112.5,800&display=swap" rel="stylesheet">
@@ -98,16 +98,80 @@ footer { margin-top: 112px; padding-top: 22px; border-top: 1px solid var(--line)
 footer nav { display: flex; gap: 20px; }
 footer a { color: var(--muted); }
 
+/* what the link opens: a visitor's browser, light like the real frame page; tabs pick the shared file */
+.opens-cmd { margin: 0 0 12px; font-size: 12.5px; color: var(--text); }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px 22px; max-width: 760px; margin: 18px 0 16px; border-bottom: 1px solid var(--line); }
+.tabs button { font: 400 13px var(--mono); color: var(--muted); background: none; border: 0; padding: 8px 0 10px; margin-bottom: -1px;
+  border-bottom: 2px solid transparent; cursor: pointer; }
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--link); }
+.browser { max-width: 760px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--raised); }
+.browser .term-top { align-items: center; }
+.addr { margin-left: 10px; flex: 1; max-width: 340px; font: 11.5px var(--mono); color: var(--muted); background: var(--ink);
+  border-radius: 6px; padding: 4px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.view { --m-bg: #f6f7f9; --m-fg: #1d2129; --m-muted: #6b7280; --m-line: #dfe3e8; --m-accent: #3b6fd8;
+  height: 330px; display: flex; flex-direction: column; background: #fff; color: var(--m-fg); font: 13px/1.45 var(--sans); }
+.view[hidden] { display: none; }
+.view.in { animation: swap .28s ease-out; }
+@keyframes swap { from { opacity: 0; transform: translateY(4px); } }
+.sf-bar, .sf-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 14px;
+  background: var(--m-bg); font-size: 11.5px; }
+.sf-bar { border-bottom: 1px solid var(--m-line); }
+.sf-bar b { font-weight: 600; }
+.sf-bar span { color: var(--m-muted); }
+.sf-foot { justify-content: center; border-top: 1px solid var(--m-line); color: var(--m-muted); font-size: 11px; }
+.sf-foot u { color: var(--m-accent); }
+.sf-main { flex: 1; overflow: hidden; padding: 22px 28px; }
+.ln { height: 7px; border-radius: 4px; background: #e5e8ee; margin: 0 0 9px; }
+/* report.html */
+.rep h4 { margin: 0 0 4px; font-size: 19px; }
+.rep .sub { color: var(--m-muted); font-size: 12px; margin: 0 0 16px; }
+.chart { display: flex; align-items: flex-end; gap: 10px; height: 92px; margin: 18px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--m-line); }
+.chart i { flex: 1; max-width: 46px; height: var(--h); border-radius: 3px 3px 0 0; background: #c9d6f2; }
+.chart i:last-child { background: var(--m-accent); }
+/* notes.md */
+.md { max-width: 420px; margin: 0 auto; }
+.md .dlmd { display: block; width: max-content; margin: 0 0 10px auto; font-size: 11px; padding: 4px 9px; border: 1px solid var(--m-line); border-radius: 6px; color: var(--m-muted); }
+.md h4 { margin: 0 0 10px; padding-bottom: 6px; font-size: 19px; border-bottom: 1px solid var(--m-line); }
+.md ul { margin: 0; padding-left: 18px; }
+.md li { margin: 3px 0; }
+.md li.task { list-style: none; margin-left: -18px; }
+.md li.task::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 7px; border: 1px solid #9aa3b2; border-radius: 2px; vertical-align: -1px; }
+.md li.task.done::before { background: var(--m-accent); border-color: var(--m-accent); }
+.md code { font-size: 11px; background: #eef0f4; color: var(--m-fg); padding: 1px 4px; }
+/* ./site */
+.site-main { padding: 0; }
+.site-nav { display: flex; align-items: center; gap: 16px; padding: 10px 22px; font-size: 11.5px; color: #4b5565; }
+.site-nav b { margin-right: auto; color: var(--m-fg); }
+.site-hero { margin: 0 22px; height: 128px; border-radius: 8px; background: #1e3a5f; position: relative; overflow: hidden; color: #fff; padding: 22px; }
+.site-hero strong { font-size: 20px; display: block; position: relative; }
+.site-hero span { font-size: 12px; opacity: .8; position: relative; }
+.site-hero .sun { position: absolute; right: 44px; top: 22px; width: 38px; height: 38px; border-radius: 50%; background: #f2b544; }
+.site-hero .hill { position: absolute; left: -10%; right: -10%; bottom: -70px; height: 120px; border-radius: 50%; background: #2f6b4f; }
+.site-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 22px 0; }
+.site-cards > div { height: 58px; border: 1px solid var(--m-line); border-radius: 6px; padding: 9px; }
+/* backup.zip */
+.dl-main { display: grid; place-items: center; background: var(--m-bg); }
+.dl-card { width: 230px; padding: 20px; border: 1px solid var(--m-line); border-radius: 12px; background: #fff; text-align: center; }
+.dl-card b { display: block; font-size: 14px; }
+.dl-card small { display: block; color: var(--m-muted); margin: 2px 0 14px; }
+.dl-card span { display: block; padding: 8px; border-radius: 8px; background: var(--m-accent); color: #fff; font-weight: 600; }
+
 @media (max-width: 640px) {
   body { font-size: 16px; }
   .feats.two { grid-template-columns: minmax(0, 1fr); }
   h1 { margin-top: 48px; }
   section { margin-top: 72px; }
   .bar nav { gap: 16px; }
+  .view { height: 300px; }
+  .sf-main { padding: 18px; }
+  .site-cards { grid-template-columns: repeat(2, 1fr); }
+  .site-cards > div:last-child { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .type { width: auto; animation: none; }
   .show, .fuse { opacity: 1; animation: none; }
+  .view.in { animation: none; }
 }
 </style>
 </head>
@@ -120,8 +184,8 @@ footer a { color: var(--muted); }
 </header>
 
 <main>
-  <h1>Send a web page as a link.</h1>
-  <p class="lede">sharefly uploads a static HTML file or folder from your terminal and prints a link. It works on your machine with zero setup, and for anyone on the internet once you add a Cloudflare Tunnel.</p>
+  <h1>Send a web page, or any file, as a link.</h1>
+  <p class="lede">sharefly uploads a file or folder from your terminal and prints a link. HTML and Markdown open as pages, anything else as a download. It works on your machine with zero setup, and for anyone on the internet once you add a Cloudflare Tunnel.</p>
 
   <div class="term" role="img" aria-label="Terminal: sharefly serve report.html starts a local server and prints http://127.0.0.1:7788/k7f3x9qa2m. After sharefly config set tunnel quick, the same command prints a public trycloudflare.com link.">
     <div class="term-top" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -141,6 +205,64 @@ footer a { color: var(--muted); }
     <small>Builds for macOS and Linux, or build from source with Go.</small>
   </div>
 
+  <section id="opens" aria-labelledby="h-opens">
+    <h2 id="h-opens">What your link opens</h2>
+    <p>Pages, whole sites and Markdown open as they are, under a bar with the expiry. Any other file gets a download page. Pick a file to see what visitors get.</p>
+    <div class="tabs" role="tablist" aria-label="File you share">
+      <button type="button" role="tab" id="t-html" aria-controls="v-html" aria-selected="true">report.html</button>
+      <button type="button" role="tab" id="t-md" aria-controls="v-md" aria-selected="false" tabindex="-1">notes.md</button>
+      <button type="button" role="tab" id="t-site" aria-controls="v-site" aria-selected="false" tabindex="-1">./site</button>
+      <button type="button" role="tab" id="t-zip" aria-controls="v-zip" aria-selected="false" tabindex="-1">backup.zip</button>
+    </div>
+    <p class="opens-cmd mono"><span class="p">$ </span>sharefly serve <span id="opens-arg">report.html</span></p>
+    <div class="browser">
+      <div class="term-top" aria-hidden="true"><i></i><i></i><i></i><span class="addr">share.yourdomain.com/k7f3x9qa2m</span></div>
+
+      <div class="view" role="tabpanel" id="v-html" aria-labelledby="t-html">
+        <div class="sf-bar"><b>report.html</b><span>Expires in 7 days</span></div>
+        <div class="sf-main rep">
+          <h4>Q3 report</h4><p class="sub">Revenue by month, July to September</p>
+          <div class="ln" style="width: 92%"></div><div class="ln" style="width: 78%"></div>
+          <div class="chart" aria-hidden="true"><i style="--h: 38%"></i><i style="--h: 52%"></i><i style="--h: 47%"></i><i style="--h: 66%"></i><i style="--h: 74%"></i><i style="--h: 95%"></i></div>
+        </div>
+        <div class="sf-foot"><span>Shared with <u>sharefly</u></span></div>
+      </div>
+
+      <div class="view" role="tabpanel" id="v-md" aria-labelledby="t-md" hidden>
+        <div class="sf-bar"><b>notes.md</b><span>Expires in 3 days</span></div>
+        <div class="sf-main"><div class="md">
+          <span class="dlmd">Download notes.md</span>
+          <h4>Release notes</h4>
+          <ul>
+            <li>Links can now be opened <strong>once</strong> with <code>--once</code></li>
+            <li>Any file can be shared; non-pages get a download page</li>
+            <li class="task done">Update the site</li>
+            <li class="task">Tag the release</li>
+          </ul>
+        </div></div>
+        <div class="sf-foot"><span>Shared with <u>sharefly</u></span></div>
+      </div>
+
+      <div class="view" role="tabpanel" id="v-site" aria-labelledby="t-site" hidden>
+        <div class="sf-bar"><b>site</b><span>Never expires</span></div>
+        <div class="sf-main site-main">
+          <div class="site-nav"><b>Lake trip</b><span>Photos</span><span>Route</span><span>Packing</span></div>
+          <div class="site-hero" aria-hidden="true"><i class="sun"></i><i class="hill"></i><strong>Three days at the lake</strong><span>August 2026</span></div>
+          <div class="site-cards" aria-hidden="true"><div><div class="ln" style="width: 70%"></div><div class="ln" style="width: 45%"></div></div><div><div class="ln" style="width: 60%"></div><div class="ln" style="width: 50%"></div></div><div><div class="ln" style="width: 75%"></div><div class="ln" style="width: 40%"></div></div></div>
+        </div>
+        <div class="sf-foot"><span>Shared with <u>sharefly</u></span></div>
+      </div>
+
+      <div class="view" role="tabpanel" id="v-zip" aria-labelledby="t-zip" hidden>
+        <div class="sf-bar"><b>backup.zip</b><span>Expires in 48 h</span></div>
+        <div class="sf-main dl-main">
+          <div class="dl-card"><b>backup.zip</b><small>48.2 MB</small><span>Download</span></div>
+        </div>
+        <div class="sf-foot"><span>Shared with <u>sharefly</u></span></div>
+      </div>
+    </div>
+  </section>
+
   <section id="features" aria-labelledby="h-features">
     <h2 id="h-features">What you can do with it</h2>
     <p>Every box starts with the command that does it.</p>
@@ -149,7 +271,7 @@ footer a { color: var(--muted); }
       <h3 class="group-title" id="h-share">Share</h3>
       <div class="feats two">
         <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html</pre>
-          <h3>Send one page</h3><p>Any HTML file, any name. The first run starts a background server for you and prints the link.</p></article>
+          <h3>Send one page, or any file</h3><p>Any HTML file, any name, opens as a page. Any other file (an archive, a PDF, an image) gets a download page. The first run starts a background server for you.</p></article>
         <article class="feat"><pre><span class="p">$ </span>sharefly serve ./site</pre>
           <h3>Send a whole site</h3><p>A folder with an <code>index.html</code> at its root, with its CSS, scripts and images. Use relative links inside it.</p></article>
         <article class="feat"><pre><span class="p">$ </span>sharefly serve notes.md</pre>
@@ -256,6 +378,29 @@ document.getElementById("copy").addEventListener("click", async (e) => {
     btn.textContent = "Select and copy";
   }
   setTimeout(() => { btn.textContent = "Copy"; }, 1800);
+});
+
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+function pick(tab) {
+  for (const t of tabs) {
+    const on = t === tab;
+    t.setAttribute("aria-selected", on);
+    t.tabIndex = on ? 0 : -1;
+    const view = document.getElementById(t.getAttribute("aria-controls"));
+    view.hidden = !on;
+    view.classList.toggle("in", on);
+  }
+  document.getElementById("opens-arg").textContent = tab.textContent;
+}
+tabs.forEach((t, i) => {
+  t.addEventListener("click", () => pick(t));
+  t.addEventListener("keydown", (e) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (!step) return;
+    const next = tabs[(i + step + tabs.length) % tabs.length];
+    pick(next);
+    next.focus();
+  });
 });
 </script>
 </body>

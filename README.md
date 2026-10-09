@@ -1,12 +1,22 @@
 # sharefly
 
-Share a static HTML file or folder via a link, straight from your terminal.
+Share a file or folder via a link, straight from your terminal.
 
 ```
 $ sharefly serve report.html
 started local sharefly server (pid 4242, log ~/.local/state/sharefly/server.log)
-http://127.0.0.1:7788/k7f3x9qa2m/report.html
+http://127.0.0.1:7788/k7f3x9qa2m
 ```
+
+What visitors get depends on what you share:
+
+| You share | The link opens |
+|---|---|
+| an HTML file, or a folder with `index.html` | the page itself |
+| a Markdown file | the Markdown as a formatted page |
+| any other file (zip, PDF, image, …) | a download page with the file's name, size and a Download button |
+
+Every link shows the share's name and expiry in a bar above it.
 
 Works locally with zero config. Add a Cloudflare Tunnel and the links work for anyone on the internet. Start it on one machine with Tailscale and you can share from all your devices.
 
@@ -32,6 +42,14 @@ sharefly serve report.html
 ```
 
 The first `serve` starts a background server for you. The command prints only the link, so it's easy to script.
+
+### Share any other file
+
+```
+sharefly serve backup.zip
+```
+
+A single file that isn't HTML or Markdown (an archive, a PDF, an image) gets a download page: its name, size and a Download button.
 
 ### Share a Markdown file
 
@@ -212,7 +230,7 @@ sharefly config open                                                            
 - `--tunnel` (serve): tunnel for the server `serve` starts (`off`, `quick`, `token`). Error if a server already runs in another mode, or if `--server` is another machine.
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
-- A share's URL is `/<id>`: a page with the share's name and expiry on top, the share itself in a frame (served unchanged at `/<id>/<entry>`), and a "Shared with sharefly" footer. Links inside the share to sites that refuse to be framed open only with cmd/ctrl-click. Links printed by older versions (`/<id>/report.html`) still work, without the frame.
+- A share's URL is `/<id>`: a page with the share's name and expiry on top, the share itself in a frame (served unchanged at `/<id>/<entry>`) or, for a single file that isn't `.html`/`.htm` (Markdown is stored as `.html`), a Download button, and a "Shared with sharefly" footer. Links inside the share to sites that refuse to be framed open only with cmd/ctrl-click. Links printed by older versions (`/<id>/report.html`) still work, without the frame.
 - Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly server --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits until it answers. If the server exits during startup, `serve` (and `start`) fail at once with the last lines of its log. `ls`, `rm` and `renew` never auto-start.
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.

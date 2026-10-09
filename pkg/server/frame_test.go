@@ -229,3 +229,39 @@ func TestNotFoundIsOnePage(t *testing.T) {
 		}
 	}
 }
+
+// Only pages are rendered in the frame; any other file (archives, PDFs, images) gets a download button, because
+// an iframe of a file the browser can't show leaves the visitor an empty frame. The button's target must be the
+// file itself, served unchanged.
+func TestFramePageRendersPagesDownloadsTheRest(t *testing.T) {
+	dir := setupShares(t)
+	writeFile(t, filepath.Join(dir, "zip1234567", "data v2.zip"), "PK")
+	writeFile(t, filepath.Join(dir, "upper12345", "REPORT.HTM"), "page")
+	h := FilesHandler(dir, storeWith(t,
+		share.Share{ID: "zip1234567", Name: "data v2.zip", Entry: "data v2.zip", Size: 2},
+		share.Share{ID: "upper12345", Name: "REPORT.HTM", Entry: "REPORT.HTM"},
+		share.Share{ID: "site123456"},
+		share.Share{ID: "single1234", Name: "notes.md", Entry: "report.html"}))
+
+	body := get(t, h, "/zip1234567").Body.String()
+	if strings.Contains(body, "<iframe") || !strings.Contains(body, `href="/zip1234567/data%20v2.zip" download="data v2.zip"`) ||
+		!strings.Contains(body, "2 B") {
+		t.Fatalf("non-page share must offer a download, not a frame: %s", body)
+	}
+	if rec := get(t, h, "/zip1234567/data%20v2.zip"); rec.Code != http.StatusOK || rec.Body.String() != "PK" {
+		t.Fatalf("download target: %d %q", rec.Code, rec.Body)
+	}
+	for _, id := range []string{"upper12345", "site123456", "single1234"} {
+		if body := get(t, h, "/"+id).Body.String(); !strings.Contains(body, "<iframe") || strings.Contains(body, "download=") {
+			t.Errorf("%s: page share must render in the frame: %s", id, body)
+		}
+	}
+}
+
+func TestHumanSize(t *testing.T) {
+	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1536: "1.5 KB", 5 << 20: "5.0 MB", 3 << 30: "3.0 GB"} {
+		if got := humanSize(n); got != want {
+			t.Errorf("humanSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
