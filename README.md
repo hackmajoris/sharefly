@@ -14,7 +14,8 @@ What visitors get depends on what you share:
 |---|---|
 | an HTML file, or a folder with `index.html` | the page itself |
 | a Markdown file | the Markdown as a formatted page |
-| any other file (zip, PDF, image, …) | a download page with the file's name, size and a Download button |
+| an image (PNG, JPEG, GIF, WebP, AVIF, SVG, …) or a video (MP4, WebM, MOV, …) | the image or a video player, with a Download button below |
+| any other file (zip, PDF, …) | a download page with the file's name, size and a Download button |
 
 Every link shows the share's name and expiry in a bar above it.
 
@@ -43,13 +44,14 @@ sharefly serve report.html
 
 The first `serve` starts a background server for you. The command prints only the link, so it's easy to script.
 
-### Share any other file
+### Share an image, a video or any other file
 
 ```
+sharefly serve photo.jpg
 sharefly serve backup.zip
 ```
 
-A single file that isn't HTML or Markdown (an archive, a PDF, an image) gets a download page: its name, size and a Download button.
+An image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.avif`, `.svg`, `.bmp`, `.ico`) is shown in the page, scaled to fit. A video (`.mp4`, `.webm`, `.m4v`, `.mov`, `.ogv`) gets a player that can seek. Both have a Download button below. Whether a video plays depends on its codec and the visitor's browser: H.264 MP4 plays everywhere, a `.mov` may only play in Safari. Any other single file (an archive, a PDF) gets a download page: its name, size and a Download button.
 
 ### Share a Markdown file
 
@@ -230,7 +232,7 @@ sharefly config open                                                            
 - `--tunnel` (serve): tunnel for the server `serve` starts (`off`, `quick`, `token`). Error if a server already runs in another mode, or if `--server` is another machine.
 - `--ttl`: `Nm` (minutes), `Nh` (hours), `Nd` (days), N a positive integer, or `never`. Default `7d`.
 - Flags may come before or after the positional argument.
-- A share's URL is `/<id>`: a page with the share's name and expiry on top, the share itself in a frame (served unchanged at `/<id>/<entry>`) or, for a single file that isn't `.html`/`.htm` (Markdown is stored as `.html`), a Download button, and a "Shared with sharefly" footer. Links inside the share to sites that refuse to be framed open only with cmd/ctrl-click. Links printed by older versions (`/<id>/report.html`) still work, without the frame.
+- A share's URL is `/<id>`: a page with the share's name and expiry on top, the share itself in a frame (served unchanged at `/<id>/<entry>`), an image or video shown inline with a Download button, or, for any other single file that isn't `.html`/`.htm` (Markdown is stored as `.html`), a Download button, and a "Shared with sharefly" footer. Links inside the share to sites that refuse to be framed open only with cmd/ctrl-click. Links printed by older versions (`/<id>/report.html`) still work, without the frame.
 - Auto-start: when the server address is local (`127.0.0.1`, `localhost`, `::1`) and nothing answers, `serve` starts `sharefly server --api-addr <that address>` in the background, logs to `<data-dir>/server.log`, and waits until it answers. If the server exits during startup, `serve` (and `start`) fail at once with the last lines of its log. `ls`, `rm` and `renew` never auto-start.
 - Expiry times print in local time.
 - Exit codes: 0 success, 1 error (message on stderr), 2 usage error.

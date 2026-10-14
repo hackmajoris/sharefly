@@ -230,9 +230,9 @@ func TestNotFoundIsOnePage(t *testing.T) {
 	}
 }
 
-// Only pages are rendered in the frame; any other file (archives, PDFs, images) gets a download button, because
-// an iframe of a file the browser can't show leaves the visitor an empty frame. The button's target must be the
-// file itself, served unchanged.
+// Only pages are rendered in the frame and only images and videos inline; any other file (archives, PDFs) gets
+// a download button, because an iframe of a file the browser can't show leaves the visitor an empty frame. The
+// button's target must be the file itself, served unchanged.
 func TestFramePageRendersPagesDownloadsTheRest(t *testing.T) {
 	dir := setupShares(t)
 	writeFile(t, filepath.Join(dir, "zip1234567", "data v2.zip"), "PK")
@@ -254,6 +254,58 @@ func TestFramePageRendersPagesDownloadsTheRest(t *testing.T) {
 	for _, id := range []string{"upper12345", "site123456", "single1234"} {
 		if body := get(t, h, "/"+id).Body.String(); !strings.Contains(body, "<iframe") || strings.Contains(body, "download=") {
 			t.Errorf("%s: page share must render in the frame: %s", id, body)
+		}
+	}
+}
+
+// Images and videos are shown in the page itself, still with a download button, and the page's CSP must allow
+// loading them from the share or the browser shows nothing.
+func TestFramePageShowsImagesAndVideosInline(t *testing.T) {
+	dir := setupShares(t)
+	writeFile(t, filepath.Join(dir, "img1234567", "Photo.PNG"), "png")
+	writeFile(t, filepath.Join(dir, "vid1234567", "clip.mp4"), "0123456789")
+	h := FilesHandler(dir, storeWith(t,
+		share.Share{ID: "img1234567", Name: "Photo.PNG", Entry: "Photo.PNG", Size: 3},
+		share.Share{ID: "vid1234567", Name: "clip.mp4", Entry: "clip.mp4", Size: 10}))
+
+	for id, want := range map[string]string{
+		"img1234567": `<img src="/img1234567/Photo.PNG" alt="Photo.PNG">`,
+		"vid1234567": `<video src="/vid1234567/clip.mp4" controls`,
+	} {
+		rec := get(t, h, "/"+id)
+		body := rec.Body.String()
+		if !strings.Contains(body, want) || strings.Contains(body, "<iframe") || !strings.Contains(body, `download="`) {
+			t.Errorf("%s: want the media inline with a download button: %s", id, body)
+		}
+		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self'") || !strings.Contains(csp, "media-src 'self'") {
+			t.Errorf("%s: CSP %q blocks the media", id, csp)
+		}
+	}
+}
+
+// Video players seek with range requests and only play what is sent with a video type; both must hold even on
+// a system without mime.types, which is why the types are registered in code.
+func TestVideoServedWithTypeAndRanges(t *testing.T) {
+	dir := setupShares(t)
+	writeFile(t, filepath.Join(dir, "vid1234567", "clip.mp4"), "0123456789")
+	h := FilesHandler(dir, storeWith(t, share.Share{ID: "vid1234567", Entry: "clip.mp4"}))
+	req := httptest.NewRequest(http.MethodGet, "/vid1234567/clip.mp4", nil)
+	req.Header.Set("Range", "bytes=2-5")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != "2345" || rec.Header().Get("Content-Type") != "video/mp4" {
+		t.Fatalf("range request: %d %q %q", rec.Code, rec.Body, rec.Header().Get("Content-Type"))
+	}
+}
+
+func TestEntryKind(t *testing.T) {
+	for entry, want := range map[string]string{
+		"": kindPage, "report.html": kindPage, "a/INDEX.HTM": kindPage,
+		"photo.jpeg": kindImage, "logo.SVG": kindImage, "clip.webm": kindVideo, "trip.MOV": kindVideo,
+		"data.zip": kindFile, "doc.pdf": kindFile, "noext": kindFile,
+	} {
+		if got := entryKind(entry); got != want {
+			t.Errorf("entryKind(%q) = %q, want %q", entry, got, want)
 		}
 	}
 }
