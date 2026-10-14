@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sharefly: share a web page or any file as a link</title>
-<meta name="description" content="sharefly uploads a file or folder from your terminal and prints a link: HTML and Markdown open as pages, anything else as a download. Local with zero setup, public through a Cloudflare Tunnel, optionally password-protected.">
+<meta name="description" content="sharefly uploads a file or folder from your terminal and prints a link: HTML and Markdown open as pages, images and videos play in the page, anything else is a download. Local with zero setup, public through a Cloudflare Tunnel, optionally password-protected.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@112.5,400;112.5,600;112.5,800&display=swap" rel="stylesheet">
@@ -150,6 +150,15 @@ footer a { color: var(--muted); }
 .site-hero .hill { position: absolute; left: -10%; right: -10%; bottom: -70px; height: 120px; border-radius: 50%; background: #2f6b4f; }
 .site-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 22px 0; }
 .site-cards > div { height: 58px; border: 1px solid var(--m-line); border-radius: 6px; padding: 9px; }
+/* photo.jpg: the image fills the area, download bar below */
+.ph-main { display: grid; place-items: center; padding: 14px; background: var(--m-bg); }
+.ph { position: relative; overflow: hidden; height: 100%; aspect-ratio: 4 / 3; max-width: 100%; border-radius: 2px; background: #7fb2d9; }
+.ph .sun { position: absolute; right: 18%; top: 16%; width: 15%; aspect-ratio: 1; border-radius: 50%; background: #f2b544; }
+.ph .hill { position: absolute; left: -20%; right: 10%; bottom: -38%; height: 70%; border-radius: 50%; background: #2f6b4f; }
+.ph .hill.back { left: 30%; right: -30%; bottom: -46%; background: #3d7f5d; }
+.ph-bar { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 7px 14px; border-top: 1px solid var(--m-line); background: var(--m-bg); font-size: 11.5px; }
+.ph-bar small { color: var(--m-muted); font-size: 11px; }
+.ph-bar .dl { padding: 4px 10px; border-radius: 6px; background: var(--m-accent); color: #fff; font-weight: 600; }
 /* backup.zip */
 .dl-main { display: grid; place-items: center; background: var(--m-bg); }
 .dl-card { width: 230px; padding: 20px; border: 1px solid var(--m-line); border-radius: 12px; background: #fff; text-align: center; }
@@ -185,7 +194,7 @@ footer a { color: var(--muted); }
 
 <main>
   <h1>Send a web page, or any file, as a link.</h1>
-  <p class="lede">sharefly uploads a file or folder from your terminal and prints a link. HTML and Markdown open as pages, anything else as a download. It works on your machine with zero setup, and for anyone on the internet once you add a Cloudflare Tunnel.</p>
+  <p class="lede">sharefly uploads a file or folder from your terminal and prints a link. HTML and Markdown open as pages, images and videos show in the page, anything else is a download. It works on your machine with zero setup, and for anyone on the internet once you add a Cloudflare Tunnel.</p>
 
   <div class="term" role="img" aria-label="Terminal: sharefly serve report.html starts a local server and prints http://127.0.0.1:7788/k7f3x9qa2m. After sharefly config set tunnel quick, the same command prints a public trycloudflare.com link.">
     <div class="term-top" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -207,11 +216,12 @@ footer a { color: var(--muted); }
 
   <section id="opens" aria-labelledby="h-opens">
     <h2 id="h-opens">What your link opens</h2>
-    <p>Pages, whole sites and Markdown open as they are, under a bar with the expiry. Any other file gets a download page. Pick a file to see what visitors get.</p>
+    <p>Pages, whole sites and Markdown open as they are, under a bar with the expiry. Images and videos show in the page with a Download button. Any other file gets a download page. Pick a file to see what visitors get.</p>
     <div class="tabs" role="tablist" aria-label="File you share">
       <button type="button" role="tab" id="t-html" aria-controls="v-html" aria-selected="true">report.html</button>
       <button type="button" role="tab" id="t-md" aria-controls="v-md" aria-selected="false" tabindex="-1">notes.md</button>
       <button type="button" role="tab" id="t-site" aria-controls="v-site" aria-selected="false" tabindex="-1">./site</button>
+      <button type="button" role="tab" id="t-img" aria-controls="v-img" aria-selected="false" tabindex="-1">photo.jpg</button>
       <button type="button" role="tab" id="t-zip" aria-controls="v-zip" aria-selected="false" tabindex="-1">backup.zip</button>
     </div>
     <p class="opens-cmd mono"><span class="p">$ </span>sharefly serve <span id="opens-arg">report.html</span></p>
@@ -253,6 +263,15 @@ footer a { color: var(--muted); }
         <div class="sf-foot"><span>Shared with <u>sharefly</u></span></div>
       </div>
 
+      <div class="view" role="tabpanel" id="v-img" aria-labelledby="t-img" hidden>
+        <div class="sf-bar"><b>photo.jpg</b><span>Expires in 7 days</span></div>
+        <div class="sf-main ph-main">
+          <div class="ph" aria-hidden="true"><i class="sun"></i><i class="hill"></i><i class="hill back"></i></div>
+        </div>
+        <div class="ph-bar"><span>photo.jpg</span><small>3.4 MB</small><span class="dl">Download</span></div>
+        <div class="sf-foot"><span>Shared with <u>sharefly</u></span></div>
+      </div>
+
       <div class="view" role="tabpanel" id="v-zip" aria-labelledby="t-zip" hidden>
         <div class="sf-bar"><b>backup.zip</b><span>Expires in 48 h</span></div>
         <div class="sf-main dl-main">
@@ -271,7 +290,7 @@ footer a { color: var(--muted); }
       <h3 class="group-title" id="h-share">Share</h3>
       <div class="feats two">
         <article class="feat"><pre><span class="p">$ </span>sharefly serve report.html</pre>
-          <h3>Send one page, or any file</h3><p>Any HTML file, any name, opens as a page. Any other file (an archive, a PDF, an image) gets a download page. The first run starts a background server for you.</p></article>
+          <h3>Send one page, or any file</h3><p>Any HTML file, any name, opens as a page. Images and videos show in the page; any other file (an archive, a PDF) gets a download page. The first run starts a background server for you.</p></article>
         <article class="feat"><pre><span class="p">$ </span>sharefly serve ./site</pre>
           <h3>Send a whole site</h3><p>A folder with an <code>index.html</code> at its root, with its CSS, scripts and images. Use relative links inside it.</p></article>
         <article class="feat"><pre><span class="p">$ </span>sharefly serve notes.md</pre>

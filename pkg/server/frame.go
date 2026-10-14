@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -18,7 +19,35 @@ import (
 const repoURL = "https://github.com/hackmajoris/sharefly"
 
 // pageCSP applies to sharefly's own pages (frame, Open), never to the shared files.
-const pageCSP = "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; form-action 'self'; base-uri 'none'"
+const pageCSP = "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; img-src 'self'; media-src 'self'; " +
+	"form-action 'self'; base-uri 'none'"
+
+// Entry kinds decide how the frame page shows a share's entry.
+const (
+	kindPage  = "page"
+	kindImage = "image"
+	kindVideo = "video"
+	kindFile  = "file"
+)
+
+var mediaKinds = map[string]string{
+	".png": kindImage, ".jpg": kindImage, ".jpeg": kindImage, ".gif": kindImage, ".webp": kindImage,
+	".avif": kindImage, ".svg": kindImage, ".bmp": kindImage, ".ico": kindImage,
+	".mp4": kindVideo, ".webm": kindVideo, ".m4v": kindVideo, ".mov": kindVideo, ".ogv": kindVideo,
+}
+
+// Go's built-in MIME table lacks these; without them a server on a system with no mime.types (a minimal
+// container) would send the files as application/octet-stream or a sniffed guess.
+func init() {
+	for ext, typ := range map[string]string{
+		".mp4": "video/mp4", ".webm": "video/webm", ".m4v": "video/x-m4v", ".mov": "video/quicktime",
+		".ogv": "video/ogg", ".bmp": "image/bmp", ".ico": "image/x-icon",
+	} {
+		if err := mime.AddExtensionType(ext, typ); err != nil {
+			panic(err)
+		}
+	}
+}
 
 func openCookieName(id string) string { return "sharefly_open_" + id }
 
@@ -66,9 +95,9 @@ func openGate(w http.ResponseWriter, r *http.Request, store *share.Store, sh sha
 	http.Redirect(w, r, r.URL.EscapedPath(), http.StatusSeeOther)
 }
 
-// framePage shows a page share (a site, an HTML file or rendered Markdown) in an iframe, and any other file as
-// a download button, between a header with its expiry and the sharefly footer. The shared files themselves are
-// served unchanged at /<id>/<entry>.
+// framePage shows a page share (a site, an HTML file or rendered Markdown) in an iframe, an image or video
+// inline with a download button, and any other file as a download button, between a header with its expiry
+// and the sharefly footer. The shared files themselves are served unchanged at /<id>/<entry>.
 func framePage(w http.ResponseWriter, sh share.Share, now time.Time) {
 	title := sh.Name
 	if title == "" {
@@ -77,7 +106,7 @@ func framePage(w http.ResponseWriter, sh share.Share, now time.Time) {
 	writePage(w, http.StatusOK, frameTmpl, map[string]any{
 		"Title":  title,
 		"Src":    (&url.URL{Path: "/" + sh.ID + "/" + sh.Entry}).EscapedPath(),
-		"Page":   isPage(sh.Entry),
+		"Kind":   entryKind(sh.Entry),
 		"File":   path.Base(sh.Entry),
 		"Size":   humanSize(sh.Size),
 		"Expiry": expiryText(sh.ExpiresAt, now),
@@ -86,11 +115,17 @@ func framePage(w http.ResponseWriter, sh share.Share, now time.Time) {
 	})
 }
 
-// isPage reports whether entry is shown rendered: a folder's index.html ("") or an HTML file, which is also
-// what Markdown shares are stored as.
-func isPage(entry string) bool {
+// entryKind says how entry is shown: a folder's index.html ("") or an HTML file (also what Markdown shares are
+// stored as) is a page, known image and video types are shown inline, anything else is a download.
+func entryKind(entry string) string {
 	ext := strings.ToLower(path.Ext(entry))
-	return entry == "" || ext == ".html" || ext == ".htm"
+	if entry == "" || ext == ".html" || ext == ".htm" {
+		return kindPage
+	}
+	if k, ok := mediaKinds[ext]; ok {
+		return k
+	}
+	return kindFile
 }
 
 func humanSize(n int64) string {
@@ -206,6 +241,12 @@ iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 .button { display: block; padding: 11px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 15px;
   font-weight: 600; text-decoration: none; }
 .button:hover { filter: brightness(1.08); }
+.media { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.media img, .media video { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.media img { background: #fff; }
+.mbar { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 8px 16px; border-top: 1px solid var(--line); }
+.mbar .size { color: var(--muted); }
+.mbar .button { display: inline-block; padding: 6px 14px; font-size: 13px; }
 footer { padding: 6px 16px; border-top: 1px solid var(--line); text-align: center; color: var(--muted); font-size: 12px; }
 a { color: var(--accent); }
 </style>
@@ -215,7 +256,11 @@ a { color: var(--accent); }
   <span class="name">{{.Title}}</span>
   <span class="exp">{{if .Once}}<span class="once">One-time view</span>{{end}}{{.Expiry}}</span>
 </header>
-{{if .Page}}<iframe src="{{.Src}}" title="{{.Title}}" allowfullscreen></iframe>
+{{if eq .Kind "page"}}<iframe src="{{.Src}}" title="{{.Title}}" allowfullscreen></iframe>
+{{else if or (eq .Kind "image") (eq .Kind "video")}}<div class="media">
+  {{- if eq .Kind "image"}}<img src="{{.Src}}" alt="{{.File}}">
+  {{- else}}<video src="{{.Src}}" controls playsinline preload="metadata"></video>{{end}}</div>
+<div class="mbar"><span class="fname">{{.File}}</span><span class="size">{{.Size}}</span><a class="button" href="{{.Src}}" download="{{.File}}">Download</a></div>
 {{else}}<div class="dl"><div class="file">
   <div class="fname">{{.File}}</div>
   <div class="size">{{.Size}}</div>
